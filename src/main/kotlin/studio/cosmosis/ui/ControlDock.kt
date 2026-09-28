@@ -57,6 +57,8 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private val motionLevel=JComboBox(arrayOf("off","subtle","normal"))
     private val uiDensity=JComboBox(arrayOf("compact","comfortable","spacious"))
     private val reducedMotion=JCheckBox("REDUCED MOTION").apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
+    private val ormlEnabled=JCheckBox("ENABLE OPTIONAL ORML RUNTIMES",true).apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
+    private val ormlStatus=JTextArea(5,30).apply{isEditable=false;lineWrap=true;wrapStyleWord=true;background=Color(0x0D,0x0D,0x0B);foreground=OffworldTheme.muted;font=Font(Font.MONOSPACED,Font.PLAIN,10)}
     private val undo=UndoManager()
     private val searchScope=JComboBox(arrayOf("ALL","MY PROMPTS","PREMADE PROMPTS"))
     private val capabilityLabel=JTextArea(5,36).apply{isEditable=false;lineWrap=true;wrapStyleWord=true}
@@ -86,7 +88,8 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             if(workflowMode.selectedItem!=s.workflowMode)workflowMode.selectedItem=s.workflowMode
             maskVisible.isSelected=s.maskVisible;maskColor.text=s.maskOverlayColor;maskOpacity.value=(s.maskOverlayOpacity*100).toInt()
             reducedMotion.isSelected=s.reducedMotion;motionLevel.selectedItem=s.motionLevel;uiDensity.selectedItem=s.uiDensity
-            refreshTrees();refreshReferences();refreshVersions();refreshDirectives()
+            ormlEnabled.isSelected=s.ormlEnabled
+            refreshTrees();refreshReferences();refreshVersions();refreshDirectives();refreshOrmlStatus()
         } }
         installKeys();pack();setLocation(30,70);isVisible=true
     }
@@ -184,6 +187,15 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             controller.setAppearance(reducedMotion.isSelected,motionLevel.selectedItem.toString(),uiDensity.selectedItem.toString())
         }.onFailure(::showError)}
 
+        add(Box.createVerticalStrut(13));add(label("OPTIONAL ORML / LOCAL ML"))
+        add(ormlEnabled);add(JScrollPane(ormlStatus))
+        button(this,"APPLY ORML STATE"){controller.setOrmlEnabled(ormlEnabled.isSelected);refreshOrmlStatus()}
+        val ormlActions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(ormlActions,"PERSON MASK"){runCatching{controller.ormlPersonMask()}.onFailure(::showError)}
+        button(ormlActions,"EMBED IMAGE"){runCatching{controller.ormlImageEmbedding()}.onSuccess{status.text="EMBEDDING "+it.fileName}.onFailure(::showError)}
+        button(ormlActions,"ORML UPSCALE"){runCatching{controller.ormlSuperResolution()}.onFailure(::showError)}
+        add(ormlActions)
+
         add(Box.createVerticalStrut(13));add(label("PROJECT / EDITOR ACTIONS"))
         listOf(
             "NEW LOCAL PROJECT" to {chooseProject(true)},
@@ -193,6 +205,9 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             "PASTE IMAGE" to {runCatching{controller.importClipboardImage()}.onFailure(::showError)},
             "MASK EDITOR" to {openMask()},
             "SMART SUBJECT MASK" to {runCatching{controller.smartSaliencyMask()}.onFailure(::showError)},
+            "ORML PERSON MASK" to {runCatching{controller.ormlPersonMask()}.onFailure(::showError)},
+            "ORML IMAGE EMBEDDING" to {runCatching{controller.ormlImageEmbedding()}.onFailure(::showError)},
+            "ORML SUPER RESOLUTION" to {runCatching{controller.ormlSuperResolution()}.onFailure(::showError)},
             "TOGGLE ANALYSIS OVERLAY" to {controller.setAnalysisVisible(!state.get().analysisVisible)},
             "ROTATE 90°" to {runCatching{controller.rotateCurrent(true)}.onFailure(::showError)},
             "FLIP HORIZONTAL" to {runCatching{controller.flipCurrent(true)}.onFailure(::showError)},
@@ -394,6 +409,15 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private fun parseList(text:String)=text.split(',','\n').map{it.trim()}.filter{it.isNotEmpty()}
     private fun parseTags(text:String)=parseList(text).toSet()
     private fun parseVariables(text:String)=text.lineSequence().mapNotNull{line->val i=line.indexOf('=');if(i<=0)null else line.substring(0,i).trim() to line.substring(i+1)}.toMap()
+    private fun refreshOrmlStatus(){
+        val d=controller.ormlDiagnostics()
+        ormlStatus.text=buildString{
+            d.statuses.forEach{(id,status)->appendLine(id+"  "+if(state.get().ormlEnabled)status else "DISABLED")}
+            d.errors.forEach{appendLine("! "+it)}
+            if(d.adapters.isEmpty())append("No external ORML runner/SPI adapter installed.")
+        }
+    }
+
     private fun refreshCapabilities(){
         val pid=provider.selectedItem?.toString()?:return
         val mid=model.editor.item?.toString()?.trim().orEmpty()
