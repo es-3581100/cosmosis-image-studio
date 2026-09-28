@@ -382,7 +382,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val pp=requireNotNull(paths){"Create/open a project first"}
         val current=assetForCurrent()
         val caps=capabilitiesFor(providerId,model)
-        val refAssets=activeReferenceAssets()
+        val refAssets=if(workflowMode in setOf(WorkflowMode.REFERENCE_REMIX,WorkflowMode.STYLE_TRANSFER)||metadata["includeReferences"]=="true")activeReferenceAssets() else emptyList()
         val refs=buildList {
             if(edit&&state.get().imagePath!=null)add(ReferenceImage(Path.of(state.get().imagePath!!),current?.mime?:"image/png"))
             refAssets.forEach{a->val p=pp.root.resolve(a.path);if(none{it.path==p})add(ReferenceImage(p,a.mime))}
