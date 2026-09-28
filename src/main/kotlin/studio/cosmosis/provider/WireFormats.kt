@@ -4,6 +4,18 @@ import java.nio.file.Files
 import java.util.Base64
 
 object OpenAiWire {
+    fun responsesImageTool(r:GenerationRequest):String {
+        val size=if(r.width!=null&&r.height!=null) "${r.width}x${r.height}" else r.metadata["size"]?:"auto"
+        return JsonUtil.obj(
+            "type" to JsonUtil.quote("image_generation"),"model" to JsonUtil.quote(r.model),
+            "action" to JsonUtil.quote(if(r.references.isEmpty())"generate" else "auto"),
+            "quality" to r.quality?.let(JsonUtil::quote),"size" to JsonUtil.quote(size),
+            "background" to JsonUtil.quote(if(r.transparent)"transparent" else "auto"),
+            "output_format" to JsonUtil.quote(r.outputFormat),
+            "output_compression" to r.metadata["compression"]
+        )
+    }
+
     fun generationBody(r:GenerationRequest):String {
         val size=if(r.width!=null&&r.height!=null) "${r.width}x${r.height}" else r.metadata["size"] ?: "auto"
         return JsonUtil.obj(
