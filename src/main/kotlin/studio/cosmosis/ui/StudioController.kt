@@ -525,6 +525,44 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         persistDerived(out,VersionOperation.CROP,"crop.${width}x$height")
     }
 
+    fun upscaleCurrent(scale:Int=2):Path{
+        require(scale in 2..4){"Upscale factor must be 2, 3, or 4"}
+        val src=requireCurrentImage();val w=src.width*scale;val h=src.height*scale
+        require(w<=8192&&h<=8192){"Upscaled dimensions exceed the 8192 px local safety bound"}
+        return persistDerived(resample(src,w,h),VersionOperation.UPSCALE,"upscale."+scale+"x")
+    }
+
+    fun resizeCurrent(width:Int,height:Int):Path{
+        require(width in 1..8192&&height in 1..8192){"Resize dimensions must be within 1..8192"}
+        return persistDerived(resample(requireCurrentImage(),width,height),VersionOperation.RESIZE,"resize."+width+"x"+height)
+    }
+
+    fun exportCurrent(destination:Path):Path{
+        val source=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
+        destination.parent?.let(Files::createDirectories)
+        Files.copy(source,destination,StandardCopyOption.REPLACE_EXISTING)
+        state.update{it.copy(message="IMAGE EXPORTED / "+destination.fileName)}
+        return destination
+    }
+
+    fun renameVersion(id:String,name:String){
+        require(name.isNotBlank()){"Version name cannot be blank"};val v=requireNotNull(graph.get(id)){"Unknown version '$id'"}
+        v.name=name.trim();db!!.saveVersion(v);state.update{it.copy(versions=graph.all(),message="VERSION RENAMED / "+id)}
+    }
+
+    fun toggleVersionFavorite(id:String):Boolean{
+        val v=requireNotNull(graph.get(id)){"Unknown version '$id'"};v.favorite=!v.favorite;db!!.saveVersion(v)
+        state.update{it.copy(versions=graph.all(),message="VERSION FAVORITE / "+if(v.favorite)"ON" else "OFF")};return v.favorite
+    }
+
+    private fun resample(src:BufferedImage,width:Int,height:Int):BufferedImage{
+        val out=BufferedImage(width,height,BufferedImage.TYPE_INT_ARGB);val g=out.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+        g.setRenderingHint(RenderingHints.KEY_RENDERING,RenderingHints.VALUE_RENDER_QUALITY)
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON)
+        g.drawImage(src,0,0,width,height,null);g.dispose();return out
+    }
+
     private fun requireCurrentImage():BufferedImage=requireNotNull(ImageIO.read(Path.of(requireNotNull(state.get().imagePath){"No image loaded"}).toFile())){"Unsupported current image"}
 
     private fun persistDerived(image:BufferedImage,operation:VersionOperation,name:String):Path{
