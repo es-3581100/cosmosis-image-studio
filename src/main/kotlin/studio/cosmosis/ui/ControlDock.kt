@@ -15,6 +15,7 @@ import javax.swing.event.UndoableEditListener
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.undo.UndoManager
+import javax.swing.text.JTextComponent
 
 class ControlDock(private val controller:StudioController,private val state:StudioState):JFrame("COSMOSIS / CONTROL") {
     private val prompt=JTextArea(14,40)
@@ -240,7 +241,95 @@ Run this bounded plan?""".trimIndent()
         val id=selectedPromptId;runCatching{if(id==null)controller.savePromptAsset(draft) else controller.updatePromptAsset(id,draft)}.onSuccess{p->selectedPromptId=p.id;dirty=false;undo.discardAllEdits();status.text="PROMPT SAVED / ${controller.promptRevisions(p.id).size} REV / ${p.allKeywords().size} INDEX TERMS";refreshTrees()}.onFailure(::showError)
     }
     private fun newPrompt(){if(dirty && JOptionPane.showConfirmDialog(this,"Creating a new prompt will clear unsaved text.\nDiscard changes?","UNSAVED PROMPT",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;selectedPromptId=null;promptTitle.text="Untitled prompt";treePath.text="MY PROMPTS/General";prompt.text="";promptSummary.text="";negativeConstraints.text="";explicitKeywords.text="";styleTags.text="";subjectTags.text="";compositionTags.text="";lightingTags.text="";cameraTags.text="";materialTags.text="";promptVariables.text="";promptNotes.text="";promptFavorite.isSelected=false;dirty=false;undo.discardAllEdits()}
-    private fun generate(edit:Boolean){val body=prompt.text.trim();if(body.isBlank())return showError(IllegalArgumentException("Prompt is empty"));val modelId=model.editor.item?.toString()?.trim().orEmpty();val q=quality.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()};val meta=linkedMapOf<String,String>();imageSize.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}?.let{meta["imageSize"]=it};thinkingLevel.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}?.let{meta["thinkingLevel"]=it};if(searchGrounding.isSelected)meta["searchGrounding"]="true";if(providerWorkflow.selectedItem=="responses")meta["openAiWorkflow"]="responses";reasoningModel.text.trim().takeIf{it.isNotBlank()}?.let{meta["reasoningModel"]=it};runCatching{controller.generate(body,provider.selectedItem.toString(),modelId,variants=(variants.value as Number).toInt(),edit=edit,transparent=transparentOutput.isSelected,quality=q,promptId=selectedPromptId,aspectRatio=aspectRatio.text.trim().takeIf{it.isNotBlank()},metadata=meta)}.onFailure(::showError)}
+    private fun generate(edit:Boolean){
+        workflowMode.selectedItem=if(edit)WorkflowMode.EDIT_EXISTING else WorkflowMode.QUICK_GENERATE
+        runSelectedWorkflow()
+    }
+
+    private fun runSelectedWorkflow(){
+        val mode=workflowMode.selectedItem as? WorkflowMode ?: WorkflowMode.QUICK_GENERATE
+        if(mode==WorkflowMode.IMAGE_TO_PROMPT){openImageToPrompt();return}
+        if(mode==WorkflowMode.UPSCALE){upscaleDialog();return}
+        if(mode==WorkflowMode.AGENT_BUILD){runAgentBuildDialog();return}
+        val body=prompt.text.trim();if(body.isBlank())return showError(IllegalArgumentException("Prompt is empty"))
+        val modelId=model.editor.item?.toString()?.trim().orEmpty();if(modelId.isBlank())return showError(IllegalArgumentException("Select a model"))
+        val q=quality.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}
+        val meta=linkedMapOf<String,String>()
+        imageSize.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}?.let{meta["imageSize"]=it}
+        thinkingLevel.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}?.let{meta["thinkingLevel"]=it}
+        if(searchGrounding.isSelected)meta["searchGrounding"]="true"
+        if(providerWorkflow.selectedItem=="responses")meta["openAiWorkflow"]="responses"
+        reasoningModel.text.trim().takeIf{it.isNotBlank()}?.let{meta["reasoningModel"]=it}
+        val w=parseOptionalInt(outputWidth.text,"width");val h=parseOptionalInt(outputHeight.text,"height")
+        if((w==null)!=(h==null))return showError(IllegalArgumentException("Width and height must be supplied together"))
+        val editing=mode in setOf(
+            WorkflowMode.EDIT_EXISTING,WorkflowMode.MASK_EDIT,WorkflowMode.REFERENCE_REMIX,
+            WorkflowMode.STYLE_TRANSFER,WorkflowMode.BACKGROUND_REPLACE,WorkflowMode.SUBJECT_PRESERVE
+        )
+        runCatching{
+            controller.generate(
+                body,provider.selectedItem.toString(),modelId,
+                variants=(variants.value as Number).toInt(),edit=editing,transparent=transparentOutput.isSelected,
+                quality=q,promptId=selectedPromptId,aspectRatio=aspectRatio.text.trim().takeIf{it.isNotBlank()},
+                metadata=meta,width=w,height=h,outputFormat=outputFormat.selectedItem?.toString()?:"png",workflowMode=mode
+            )
+        }.onFailure(::showError)
+    }
+    private fun chooseReference(){
+        val fc=JFileChooser().apply{isMultiSelectionEnabled=true}
+        if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return
+        val chosen=fc.selectedFiles.takeIf{it.isNotEmpty()}?.toList()?:listOf(fc.selectedFile)
+        chosen.filterNotNull().forEach{file->runCatching{controller.addReferenceImage(file.toPath())}.onFailure(::showError)}
+        refreshReferences()
+    }
+
+    private fun refreshReferences(){
+        val root=state.get().projectRoot.takeIf{it.isNotBlank()}?.let(Path::of)
+        val refs=controller.referenceImages().map{a->
+            val labelPath=root?.resolve(a.path)?.fileName?.toString()?:a.path
+            ReferenceRef(a.id,a.id.takeLast(8)+" / "+a.width+"×"+a.height+" / "+labelPath)
+        }
+        referenceList.setListData(refs.toTypedArray())
+    }
+
+    private fun newDirective(){selectedDirectiveId=null;directiveTitle.text="";directiveBody.text="";directiveEnabled.isSelected=true;directiveList.clearSelection()}
+    private fun loadDirective(id:String){controller.allDirectives().firstOrNull{it.id==id}?.let{d->selectedDirectiveId=d.id;directiveTitle.text=d.title;directiveBody.text=d.body;directiveEnabled.isSelected=d.enabled}}
+    private fun refreshDirectives(){directiveList.setListData(controller.allDirectives().map{DirectiveRef(it.id,(if(it.enabled)"● " else "○ ")+it.title)}.toTypedArray())}
+    private fun saveDirective(){
+        val title=directiveTitle.text.trim();val body=directiveBody.text.trim()
+        runCatching{
+            val id=selectedDirectiveId
+            if(id==null)controller.saveDirective(title,body,directiveEnabled.isSelected)
+            else controller.updateDirective(id,title,body,directiveEnabled.isSelected)
+        }.onSuccess{d->selectedDirectiveId=d.id;refreshDirectives();status.text="DIRECTIVE SAVED / "+d.id}.onFailure(::showError)
+    }
+
+    private fun resizeDialog(){
+        val s=state.get();if(s.imagePath==null)return showError(IllegalStateException("Import/select an image first"))
+        val w=JTextField(s.imageWidth.toString());val h=JTextField(s.imageHeight.toString())
+        val form=JPanel(GridLayout(0,2,8,8)).apply{add(label("WIDTH"));add(w);add(label("HEIGHT"));add(h)}
+        if(JOptionPane.showConfirmDialog(this,form,"RESIZE / LOCAL",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return
+        runCatching{controller.resizeCurrent(w.text.toInt(),h.text.toInt())}.onFailure(::showError)
+    }
+
+    private fun upscaleDialog(){
+        val scale=JComboBox(arrayOf("2","3","4"))
+        if(JOptionPane.showConfirmDialog(this,scale,"UPSCALE FACTOR / LOCAL BICUBIC",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return
+        runCatching{controller.upscaleCurrent(scale.selectedItem.toString().toInt())}.onFailure(::showError)
+    }
+
+    private fun exportCurrentImage(){
+        if(state.get().imagePath==null)return showError(IllegalStateException("Import/select an image first"))
+        val fc=JFileChooser().apply{selectedFile=java.io.File("cosmosis-current.png")}
+        if(fc.showSaveDialog(this)!=JFileChooser.APPROVE_OPTION)return
+        runCatching{controller.exportCurrent(fc.selectedFile.toPath())}.onSuccess{status.text="IMAGE EXPORTED / "+it.toAbsolutePath()}.onFailure(::showError)
+    }
+
+    private fun parseOptionalInt(text:String,label:String):Int?{
+        val v=text.trim();if(v.isBlank())return null
+        return v.toIntOrNull()?.takeIf{it>0}?:throw IllegalArgumentException("$label must be a positive integer")
+    }
+
     private fun loadPrompt(id:String){controller.allPrompts().find{it.id==id}?.let{p->selectedPromptId=if(p.readOnly)null else p.id;promptTitle.text=p.title;treePath.text=p.treePath;prompt.text=p.body;promptSummary.text=p.summary;negativeConstraints.text=p.negativeConstraints;explicitKeywords.text=p.explicitKeywords.joinToString(", ");styleTags.text=p.styleTags.joinToString(", ");subjectTags.text=p.subjectTags.joinToString(", ");compositionTags.text=p.compositionTags.joinToString(", ");lightingTags.text=p.lightingTags.joinToString(", ");cameraTags.text=p.cameraTags.joinToString(", ");materialTags.text=p.materialTags.joinToString(", ");promptVariables.text=p.variables.entries.joinToString("\n"){it.key+"="+it.value};promptNotes.text=p.notes;promptFavorite.isSelected=p.favorite;dirty=false;undo.discardAllEdits();status.text="${if(p.readOnly)"UPSTREAM / READ ONLY" else "LOCAL"} / ${p.title} / ${p.allKeywords().size} indexed terms"}}
     private fun selectedNodeId(tree:JTree)=((tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject as? NodeRef)?.id
     private fun refreshTrees(q:String=""){
@@ -248,7 +337,7 @@ Run this bounded plan?""".trimIndent()
         buildTree(localTree,"MY PROMPTS",all.filter{!it.readOnly&&(scope=="ALL"||scope=="MY PROMPTS")});buildTree(premadeTree,"PREMADE PROMPTS",all.filter{it.readOnly&&(scope=="ALL"||scope=="PREMADE PROMPTS")})
     }
     private fun buildTree(tree:JTree,rootName:String,nodes:List<PromptAsset>){val root=DefaultMutableTreeNode(rootName);for(p in nodes.sortedBy{it.treePath+it.title}){var cur=root;for(seg in p.treePath.split('/').drop(1)){if(seg.isBlank())continue;var found:DefaultMutableTreeNode?=null;val en=cur.children();while(en.hasMoreElements()){val n=en.nextElement() as DefaultMutableTreeNode;if(n.userObject.toString()==seg){found=n;break}};cur=found?:DefaultMutableTreeNode(seg).also{cur.add(it)}};cur.add(DefaultMutableTreeNode(NodeRef(p.id,"${if(p.readOnly)"UPSTREAM · " else ""}${p.title}")))};tree.model=DefaultTreeModel(root);for(i in 0 until tree.rowCount)tree.expandRow(i)}
-    private fun refreshVersions(){val refs=controller.versionNodes().map{VersionRef(it.id,"${it.id.takeLast(8)} / ${it.operation} / ${it.name}")};versionList.setListData(refs.toTypedArray())}
+    private fun refreshVersions(){val refs=controller.versionNodes().map{VersionRef(it.id,(if(it.favorite)"★ " else "")+it.id.takeLast(8)+" / "+it.operation+" / "+it.name)};versionList.setListData(refs.toTypedArray())}
     private fun importPrompt(){val fc=JFileChooser();if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return;runCatching{controller.importPrompt(fc.selectedFile.toPath())}.onSuccess{loadPrompt(it.id);refreshTrees()}.onFailure(::showError)}
     private fun exportPrompt(){val id=selectedPromptId?:return showError(IllegalStateException("Select an editable local prompt first"));val fc=JFileChooser().apply{selectedFile=java.io.File("cosmosis-prompt.json")};if(fc.showSaveDialog(this)!=JFileChooser.APPROVE_OPTION)return;runCatching{controller.exportPrompt(id,fc.selectedFile.toPath())}.onFailure(::showError)}
     private fun parseList(text:String)=text.split(',','\n').map{it.trim()}.filter{it.isNotEmpty()}
@@ -284,5 +373,8 @@ Run this bounded plan?""".trimIndent()
     private fun showError(t:Throwable){JOptionPane.showMessageDialog(this,t.message?:t.toString(),"COSMOSIS / ERROR",JOptionPane.ERROR_MESSAGE)}
     data class NodeRef(val id:String,val label:String){override fun toString()=label}
     data class VersionRef(val id:String,val label:String){override fun toString()=label}
+    data class ReferenceRef(val id:String,val label:String){override fun toString()=label}
+    data class DirectiveRef(val id:String,val label:String){override fun toString()=label}
+    data class JobRef(val id:String,val label:String){override fun toString()=label}
     data class CommandRef(val label:String,val action:()->Unit){override fun toString()=label}
 }
