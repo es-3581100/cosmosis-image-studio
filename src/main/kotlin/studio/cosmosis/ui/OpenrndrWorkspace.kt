@@ -40,10 +40,11 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
         keyboard.keyDown.listen { ev -> val ctrl=ev.modifiers.any { it.name=="CTRL" || it.name=="META" || it.name=="SUPER" };when {
             ctrl && ev.name=="k" -> SwingUtilities.invokeLater{dock.openCommandPalette()}
             ctrl && ev.name=="enter" -> { val s=state.get();if(s.promptBody.isNotBlank())runCatching{controller.generate(s.promptBody,s.provider.lowercase(),s.model)} }
-            ev.name=="g" -> state.update{it.copy(message="MODE / GENERATE")}
-            ev.name=="e" -> state.update{it.copy(message="MODE / EDIT")}
-            ev.name=="m" -> SwingUtilities.invokeLater{dock.toFront()}
-            ev.name=="c" -> state.update{it.copy(compareMode=if(it.compareMode=="OFF")"SPLIT" else "OFF",message="COMPARE / ${if(it.compareMode=="OFF")"SPLIT" else "OFF"}")}
+            ev.name=="g" -> controller.setWorkflowMode(studio.cosmosis.WorkflowMode.QUICK_GENERATE)
+            ev.name=="e" -> controller.setWorkflowMode(studio.cosmosis.WorkflowMode.EDIT_EXISTING)
+            ev.name=="m" -> controller.setWorkflowMode(studio.cosmosis.WorkflowMode.MASK_EDIT)
+            ev.name=="h" -> controller.setMaskVisible(!state.get().maskVisible)
+            ev.name=="c" -> state.update{it.copy(compareMode=if(it.compareMode=="OFF"&&it.comparePath!=null)"SPLIT" else "OFF",message="COMPARE / "+if(it.compareMode=="OFF"&&it.comparePath!=null)"SPLIT" else "OFF")}
             ev.name=="0" -> {pan=Vector2.ZERO;zoom=1.0;controller.resetView()}
         } }
         extend {
@@ -55,7 +56,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
             // workstation planes
             drawer.fill=SURFACE;drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.12);drawer.rectangle(0.0,0.0,width.toDouble(),72.0);drawer.rectangle(0.0,72.0,82.0,(height-72).toDouble());drawer.rectangle((width-300).toDouble(),72.0,300.0,(height-72).toDouble());drawer.rectangle(82.0,(height-170).toDouble(),(width-382).toDouble(),120.0);drawer.rectangle(82.0,(height-50).toDouble(),(width-82).toDouble(),50.0)
             if(mono!=null){drawer.fontMap=mono;drawer.fill=FG;drawer.text("COSMOSIS / IMAGE STUDIO",21.0,30.0);drawer.fontMap=monoSmall!!;drawer.fill=MUTED;drawer.text("${s.projectName}  /  ${s.currentVersion}",21.0,52.0);drawer.text("${s.provider} / ${s.model}",(width-560).toDouble(),30.0);drawer.fill=if(s.jobState=="FAILED")RED else if(s.jobState=="COMPLETE")GREEN else FG;drawer.text("JOB ${s.jobState}",(width-180).toDouble(),30.0)}
-            val tools=listOf("SEL","MASK","CROP","AI","FIT","CMP");if(monoSmall!=null){drawer.fontMap=monoSmall;tools.forEachIndexed{i,t->drawer.fill=if(i==0)FG else MUTED;drawer.text(t,23.0,118.0+i*54)}}
+            val tools=listOf("SEL","MASK","CROP","AI","FIT","CMP");if(monoSmall!=null){drawer.fontMap=monoSmall;tools.forEachIndexed{i,t->drawer.fill=if(t==s.selectedTool)FG else MUTED;drawer.text(t,23.0,118.0+i*54)}}
             // image field / split compare instrument
             s.imagePath?.let { p ->
                 if(p!=loadedPath){runCatching{image?.destroy();image=loadImage(p);loadedPath=p}}
@@ -83,7 +84,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                 if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("DROP IMAGE HERE  /  or use Control → Import Image",width/2.0-150,height/2.0+15)}
             }
             // inspector
-            if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("// INSPECTOR",(width-278).toDouble(),105.0);drawer.fill=FG;drawer.text("PROMPT",(width-278).toDouble(),140.0);drawer.fill=MUTED;val preview=s.promptBody.replace('\n',' ').take(220);preview.chunked(34).take(6).forEachIndexed{i,line->drawer.text(line,(width-278).toDouble(),164.0+i*16)};drawer.fill=FG;drawer.text("REFERENCES",(width-278).toDouble(),285.0);drawer.fill=MUTED;drawer.text(if(s.imagePath==null)"none" else "1 current image",(width-278).toDouble(),307.0);drawer.fill=FG;drawer.text("MASK",(width-278).toDouble(),350.0);drawer.fill=if(s.maskPath==null)MUTED else GREEN;drawer.text(if(s.maskPath==null)"○ OFF" else "● ACTIVE",(width-278).toDouble(),372.0);drawer.fill=FG;drawer.text("WORKERS",(width-278).toDouble(),420.0);s.jobs.takeLast(8).forEachIndexed{i,j->drawer.fill=if(j.state==JobState.COMPLETE)GREEN else if(j.state==JobState.FAILED)RED else MUTED;drawer.text("${j.type.take(16)}  ${j.state}",(width-278).toDouble(),444.0+i*18)} }
+            if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("// INSPECTOR",(width-278).toDouble(),105.0);drawer.fill=FG;drawer.text("PROMPT",(width-278).toDouble(),140.0);drawer.fill=MUTED;val preview=s.promptBody.replace('\n',' ').take(220);preview.chunked(34).take(6).forEachIndexed{i,line->drawer.text(line,(width-278).toDouble(),164.0+i*16)};drawer.fill=FG;drawer.text("REFERENCES",(width-278).toDouble(),285.0);drawer.fill=MUTED;drawer.text((if(s.imagePath==null)0 else 1).toString()+" source + "+s.referencePaths.size+" attached",(width-278).toDouble(),307.0);drawer.fill=FG;drawer.text("WORKFLOW",(width-278).toDouble(),333.0);drawer.fill=MUTED;drawer.text(s.workflowMode.name,(width-278).toDouble(),351.0);drawer.fill=FG;drawer.text("MASK",(width-278).toDouble(),382.0);drawer.fill=if(s.maskPath==null)MUTED else GREEN;drawer.text(if(s.maskPath==null)"○ OFF" else if(s.maskVisible)"● ACTIVE / VISIBLE" else "● ACTIVE / HIDDEN",(width-278).toDouble(),404.0);drawer.fill=FG;drawer.text("WORKERS",(width-278).toDouble(),446.0);s.jobs.takeLast(7).forEachIndexed{i,j->drawer.fill=if(j.state==JobState.COMPLETE)GREEN else if(j.state==JobState.FAILED)RED else MUTED;drawer.text("${j.type.take(16)}  ${j.state}",(width-278).toDouble(),470.0+i*18)} }
             // branching lineage instrument: geometry communicates branches instead of color.
             if(monoSmall!=null){
                 drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("// VERSION GRAPH",103.0,(height-145).toDouble())
@@ -99,7 +100,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                 }}}
                 layout.forEach{pt->val x=gx0+(gx1-gx0)*pt.x;val y=gy0+(gy1-gy0)*pt.y;val active=pt.id==s.currentVersion;drawer.stroke=if(active)FG else ColorRGBa(1.0,1.0,227/255.0,.28);drawer.fill=if(active)FG else SURFACE;drawer.rectangle(x-4,y-4,8.0,8.0);if(active){drawer.fill=FG;drawer.text(pt.id.takeLast(6),x+8,y+4)}}
             }
-            if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("${s.imageWidth}×${s.imageHeight}  │  ${"%.0f".format(zoom*100)}%  │  MASK ${if(s.maskPath==null)"off" else "on"}  │  ${s.message}",103.0,(height-20).toDouble())}
+            if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("${s.imageWidth}×${s.imageHeight}  │  ${"%.0f".format(zoom*100)}%  │  ${s.workflowMode.name}  │  REF ${s.referencePaths.size}  │  MASK ${if(s.maskPath==null)"off" else if(s.maskVisible)"visible" else "hidden"}  │  ${s.message}",103.0,(height-20).toDouble())}
         }
     }
 }
