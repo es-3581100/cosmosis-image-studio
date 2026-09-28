@@ -1,28 +1,20 @@
 package studio.cosmosis.provider
 
 /**
- * Conservative optional estimates used only when a user explicitly sets a
- * provider-spend cap. Unknown pricing returns null so the worker can fail
- * closed rather than pretend to enforce a budget it cannot calculate.
- * Values are data, not billing authority; keep this table dated and small.
+ * Request-time spend estimates are used only to enforce an explicit hard
+ * provider-spend ceiling before a job is admitted.
+ *
+ * A number is returned only when it is a defensible total request estimate.
+ * Current remote image routes include usage-dependent input/reasoning/tool
+ * charges that cannot be bounded from the canonical request alone, so they
+ * intentionally return null. This makes a requested hard ceiling fail closed
+ * instead of treating image-output price as total spend.
  */
 object ProviderCostEstimator {
-    const val PRICE_DATA_AS_OF="2026-09-27"
-    fun estimateUsd(providerId:String,request:GenerationRequest):Double? {
-        val each=when(providerId.lowercase()){
-            "local" -> 0.0
-            "gemini" -> when(request.model){
-                "gemini-3.1-flash-image" -> when((request.metadata["imageSize"]?:"1K").uppercase()){
-                    "0.5K","512","512PX" -> .045
-                    "1K" -> .067
-                    "2K" -> .101
-                    "4K" -> .151
-                    else -> return null
-                }
-                else -> return null
-            }
-            else -> return null
-        }
-        return each*request.variants
+    const val PRICE_DATA_AS_OF="2026-09-28"
+
+    fun estimateUsd(providerId:String,request:GenerationRequest):Double? = when(providerId.lowercase()){
+        "local" -> 0.0
+        else -> null
     }
 }
