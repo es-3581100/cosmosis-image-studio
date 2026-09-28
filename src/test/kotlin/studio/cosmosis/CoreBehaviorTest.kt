@@ -74,6 +74,12 @@ class CoreBehaviorTest {
         val rejected=OrmlExecutor(listOf(bad)).invoke(OrmlInvocation(capabilityId,input.toString()))
         assertFalse(rejected.ok);assertContains(rejected.message,"missing output")
     }
+    @Test fun processOrmlDiscoveryRejectsMissingExecutable(){
+        val env=mapOf("COSMOSIS_ORML_U2NET_RUNNER" to "/definitely/not/a/cosmosis-runner")
+        val discovery=ProcessOrmlAdapters.discover(env)
+        assertTrue(discovery.adapters.isEmpty())
+        assertTrue(discovery.errors.any{it.contains("COSMOSIS_ORML_U2NET_RUNNER")})
+    }
     @Test fun ormlDuplicateAdaptersAreRejected(){
         val one=object:OrmlAdapter{override val capabilityId="smart-subject-mask";override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,false,message="one")}
         val two=object:OrmlAdapter{override val capabilityId="smart-subject-mask";override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,false,message="two")}
