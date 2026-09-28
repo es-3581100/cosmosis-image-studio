@@ -214,10 +214,15 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val docsPacket=agentIndex.contextPacket(intent,5000)
         val related=prompts.search(intent).take(4)
         val localAnalysis=sourcePath?.let{runCatching{ImageToPrompt.extract(it,PromptOutputMode.SUBJECT_REPLACEABLE)}.getOrNull()}
+        val activeDirectives=enabledDirectives()
         val shouldSeedMask=sourcePath!=null&&state.get().maskPath==null&&Regex("(?i)\\b(background|replace|preserve|subject|person|region|clothing|mask)\\b").containsMatchIn(intent)
         if(shouldSeedMask)runCatching{smartSaliencyMask()}
         val compiledIntent=buildString{
             append(intent.trim())
+            if(activeDirectives.isNotEmpty()){
+                append("\n\nINSPECTABLE AGENT DIRECTIVES\n")
+                activeDirectives.forEach{append("- ");append(it.title);append(": ");append(it.body.take(800));append('\n')}
+            }
             localAnalysis?.plainText?.takeIf{it.isNotBlank()}?.let{append("\n\nLOCAL VISUAL CONTEXT\n");append(it)}
             if(related.isNotEmpty()){
                 append("\n\nRELEVANT LOCAL PROMPT PATTERNS\n")
@@ -239,6 +244,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
             appendLine("budget.generations=${plan.budget.maxGenerations}");appendLine("budget.retries=${plan.budget.maxRetries}")
             appendLine("budget.parallel=${plan.budget.maxParallelWorkers}");appendLine("budget.timeout=${plan.budget.timeoutSeconds}")
             appendLine("documentation:");appendLine(docsPacket.ifBlank{"none"})
+            appendLine("directives:");activeDirectives.forEach{appendLine(it.id+" / "+it.title)}
             appendLine("steps:");plan.steps.forEach{appendLine("${it.index}. ${it.role}: ${it.action}")}
         }))
         val caps=capabilitiesFor(providerId,model)
