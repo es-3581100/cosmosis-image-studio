@@ -3,7 +3,9 @@ package studio.cosmosis.orml
 import studio.cosmosis.security.Redaction
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.LinkOption
 import java.util.concurrent.TimeUnit
+import javax.imageio.ImageIO
 
 /**
  * Executes an explicitly configured local ORML runner without a shell.
@@ -21,6 +23,24 @@ class ProcessOrmlAdapter(
     private val defaultTimeoutSeconds:Long=180
 ):OrmlAdapter {
     fun available():Boolean = Files.isRegularFile(executable) && Files.isExecutable(executable)
+
+    data class Probe(val ready:Boolean,val message:String)
+
+    fun probe(timeoutSeconds:Long=5):Probe {
+        if(!available())return Probe(false,"configured runner is not executable")
+        return runCatching{
+            val process=ProcessBuilder(executable.toAbsolutePath().toString(),"--describe").redirectErrorStream(true).start()
+            val finished=process.waitFor(timeoutSeconds.coerceIn(1,30),TimeUnit.SECONDS)
+            if(!finished){process.destroyForcibly();return Probe(false,"runner describe timed out")}
+            val body=Redaction.sanitize(process.inputStream.bufferedReader().use{it.readText()}).trim()
+            if(process.exitValue()!=0)return Probe(false,"runner describe exited "+process.exitValue()+if(body.isBlank())"" else ": "+body.take(300))
+            if(!Regex("\\\"protocolVersion\\\"\\s*:\\s*\\\"1\\\"").containsMatchIn(body))
+                return Probe(false,"runner protocol version 1 was not reported")
+            val cap=Regex("\\{[^{}]*\\\"id\\\"\\s*:\\s*\\\""+Regex.escape(capabilityId)+"\\\"[^{}]*\\\"available\\\"\\s*:\\s*true[^{}]*}")
+            if(!cap.containsMatchIn(body))return Probe(false,"runner does not report "+capabilityId+" as available")
+            Probe(true,"protocol v1 / "+capabilityId+" available")
+        }.getOrElse{Probe(false,"runner describe failed: "+Redaction.sanitize(it.message?:it.javaClass.simpleName).take(300))}
+    }
 
     override fun invoke(request:OrmlInvocation):OrmlResult {
         if(!available())return OrmlResult(capabilityId,false,message="Configured ORML runner is not executable")
@@ -62,8 +82,25 @@ class ProcessOrmlAdapter(
             }
             val log=Redaction.sanitize(process.inputStream.bufferedReader().use{it.readText()}).replace(Regex("[\\r\\n]+")," ").take(500)
             if(process.exitValue()!=0)return OrmlResult(capabilityId,false,message="ORML runner exited "+process.exitValue()+if(log.isBlank())"" else ": "+log)
-            if(descriptor.outputs.any{it=="image"||it.contains("mask",true)} && !Files.isRegularFile(output))
-                return OrmlResult(capabilityId,false,message="ORML runner completed without required output file")
+            if(!Files.isRegularFile(output,LinkOption.NOFOLLOW_LINKS))return OrmlResult(capabilityId,false,message="ORML runner completed without required regular output file")
+            if(Files.size(output)<=0)return OrmlResult(capabilityId,false,message="ORML runner completed with empty output file")
+            when(capabilityId){
+                "smart-subject-mask","person-body-mask" -> {
+                    val source=runCatching{ImageIO.read(input.toFile())}.getOrNull()
+                        ?:return OrmlResult(capabilityId,false,message="ORML mask input is not a decodable image")
+                    val maskImage=runCatching{ImageIO.read(output.toFile())}.getOrNull()
+                        ?:return OrmlResult(capabilityId,false,message="ORML mask output is not a decodable image")
+                    if(source.width!=maskImage.width||source.height!=maskImage.height)
+                        return OrmlResult(capabilityId,false,message="ORML mask output dimensions must match input")
+                }
+                "super-resolution" -> if(runCatching{ImageIO.read(output.toFile())}.getOrNull()==null)
+                    return OrmlResult(capabilityId,false,message="ORML super-resolution output is not a decodable image")
+                "image-embedding" -> {
+                    val body=runCatching{Files.readString(output)}.getOrNull()?.trim().orEmpty()
+                    if(!(body.startsWith("{")||body.startsWith("[")))
+                        return OrmlResult(capabilityId,false,message="ORML embedding output is not JSON")
+                }
+            }
             OrmlResult(
                 capabilityId,true,
                 outputPaths=if(Files.isRegularFile(output))listOf(output.toString())else emptyList(),
@@ -96,7 +133,11 @@ object ProcessOrmlAdapters {
             val path=runCatching{Path.of(raw).toAbsolutePath()}.getOrNull()
             if(path==null||!Files.isRegularFile(path)||!Files.isExecutable(path)){
                 errors+="Rejected $env: configured runner is not an executable file"
-            }else adapters+=ProcessOrmlAdapter(capability,path)
+            }else{
+                val adapter=ProcessOrmlAdapter(capability,path)
+                val probe=adapter.probe()
+                if(probe.ready)adapters+=adapter else errors+="Rejected $env: "+probe.message
+            }
         }
         return ProcessOrmlDiscovery(adapters,errors)
     }
