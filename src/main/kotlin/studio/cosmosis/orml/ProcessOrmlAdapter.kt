@@ -23,6 +23,24 @@ class ProcessOrmlAdapter(
 ):OrmlAdapter {
     fun available():Boolean = Files.isRegularFile(executable) && Files.isExecutable(executable)
 
+    data class Probe(val ready:Boolean,val message:String)
+
+    fun probe(timeoutSeconds:Long=5):Probe {
+        if(!available())return Probe(false,"configured runner is not executable")
+        return runCatching{
+            val process=ProcessBuilder(executable.toAbsolutePath().toString(),"--describe").redirectErrorStream(true).start()
+            val finished=process.waitFor(timeoutSeconds.coerceIn(1,30),TimeUnit.SECONDS)
+            if(!finished){process.destroyForcibly();return Probe(false,"runner describe timed out")}
+            val body=Redaction.sanitize(process.inputStream.bufferedReader().use{it.readText()}).trim()
+            if(process.exitValue()!=0)return Probe(false,"runner describe exited "+process.exitValue()+if(body.isBlank())"" else ": "+body.take(300))
+            if(!Regex("\\\"protocolVersion\\\"\\s*:\\s*\\\"1\\\"").containsMatchIn(body))
+                return Probe(false,"runner protocol version 1 was not reported")
+            val cap=Regex("\\{[^{}]*\\\"id\\\"\\s*:\\s*\\\""+Regex.escape(capabilityId)+"\\\"[^{}]*\\\"available\\\"\\s*:\\s*true[^{}]*}")
+            if(!cap.containsMatchIn(body))return Probe(false,"runner does not report "+capabilityId+" as available")
+            Probe(true,"protocol v1 / "+capabilityId+" available")
+        }.getOrElse{Probe(false,"runner describe failed: "+Redaction.sanitize(it.message?:it.javaClass.simpleName).take(300))}
+    }
+
     override fun invoke(request:OrmlInvocation):OrmlResult {
         if(!available())return OrmlResult(capabilityId,false,message="Configured ORML runner is not executable")
         val input=runCatching{Path.of(request.inputPath).toAbsolutePath()}.getOrNull()
@@ -114,7 +132,11 @@ object ProcessOrmlAdapters {
             val path=runCatching{Path.of(raw).toAbsolutePath()}.getOrNull()
             if(path==null||!Files.isRegularFile(path)||!Files.isExecutable(path)){
                 errors+="Rejected $env: configured runner is not an executable file"
-            }else adapters+=ProcessOrmlAdapter(capability,path)
+            }else{
+                val adapter=ProcessOrmlAdapter(capability,path)
+                val probe=adapter.probe()
+                if(probe.ready)adapters+=adapter else errors+="Rejected $env: "+probe.message
+            }
         }
         return ProcessOrmlDiscovery(adapters,errors)
     }
