@@ -336,77 +336,164 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
 
     fun generate(
         prompt:String,providerId:String,model:String,variants:Int=1,edit:Boolean=false,transparent:Boolean=false,
-        quality:String?=null,promptId:String?=null,aspectRatio:String?=null,metadata:Map<String,String> = emptyMap()
+        quality:String?=null,promptId:String?=null,aspectRatio:String?=null,metadata:Map<String,String> = emptyMap(),
+        width:Int?=null,height:Int?=null,outputFormat:String="png",
+        workflowMode:WorkflowMode=if(edit)WorkflowMode.EDIT_EXISTING else WorkflowMode.QUICK_GENERATE
     ){
-        submitGeneration(prompt,providerId,model,variants,edit,transparent,quality,promptId,aspectRatio,metadata,JobBudget(maxGenerations=variants,maxRetries=2,maxParallelWorkers=2)){}
+        setWorkflowMode(workflowMode)
+        if(workflowMode==WorkflowMode.UPSCALE){upscaleCurrent(metadata["upscaleFactor"]?.toIntOrNull()?:2);return}
+        if(workflowMode==WorkflowMode.IMAGE_TO_PROMPT){analyzeCurrent();return}
+        val editing=edit || workflowMode in setOf(
+            WorkflowMode.EDIT_EXISTING,WorkflowMode.MASK_EDIT,WorkflowMode.REFERENCE_REMIX,
+            WorkflowMode.STYLE_TRANSFER,WorkflowMode.BACKGROUND_REPLACE,WorkflowMode.SUBJECT_PRESERVE
+        )
+        if(editing)require(state.get().imagePath!=null){"This workflow requires a current image"}
+        if(workflowMode==WorkflowMode.MASK_EDIT){
+            require(state.get().maskPath!=null){"Mask Edit requires an active mask"}
+            val caps=capabilitiesFor(providerId,model);require(caps.maskEditing){"Selected model does not support mask editing"}
+        }
+        if(workflowMode in setOf(WorkflowMode.REFERENCE_REMIX,WorkflowMode.STYLE_TRANSFER))require(activeReferenceIds.isNotEmpty()){"This workflow requires at least one reference image"}
+        if(workflowMode==WorkflowMode.BACKGROUND_REPLACE && state.get().maskPath==null)runCatching{smartSaliencyMask()}
+        val workflowPrompt=when(workflowMode){
+            WorkflowMode.STYLE_TRANSFER -> "Use the attached reference image(s) as style guidance. Preserve source geometry unless explicitly requested otherwise.\n\n"+prompt
+            WorkflowMode.BACKGROUND_REPLACE -> "Replace the background while preserving the primary subject and unmasked subject detail.\n\n"+prompt
+            WorkflowMode.SUBJECT_PRESERVE -> "Preserve subject identity, geometry, silhouette and distinctive details unless the request explicitly changes them.\n\n"+prompt
+            WorkflowMode.REFERENCE_REMIX -> "Remix the current image using the attached reference image(s) as additional visual guidance.\n\n"+prompt
+            WorkflowMode.TEXT_POSTER -> "Treat user-supplied visible text as exact copy; do not silently rewrite it.\n\n"+prompt
+            WorkflowMode.PRECISION_GENERATE -> "Follow spatial relationships, constraints and requested text literally.\n\n"+prompt
+            else -> prompt
+        }
+        submitGeneration(
+            workflowPrompt,providerId,model,variants,editing,transparent,quality,promptId,aspectRatio,metadata,
+            JobBudget(maxGenerations=variants,maxRetries=2,maxParallelWorkers=2),width,height,outputFormat,workflowMode
+        ){}
     }
 
     private fun submitGeneration(
         prompt:String,providerId:String,model:String,variants:Int,edit:Boolean,transparent:Boolean,quality:String?,
         promptId:String?,aspectRatio:String?,metadata:Map<String,String>,budget:JobBudget,
+        width:Int?=null,height:Int?=null,outputFormat:String="png",workflowMode:WorkflowMode=if(edit)WorkflowMode.EDIT_EXISTING else WorkflowMode.QUICK_GENERATE,
         done:(Result<List<Path>>)->Unit
     ){
         val pp=requireNotNull(paths){"Create/open a project first"}
         val current=assetForCurrent()
         val caps=capabilitiesFor(providerId,model)
-        val refs=if(edit&&state.get().imagePath!=null)listOf(ReferenceImage(Path.of(state.get().imagePath!!),current?.mime?:"image/png"))else emptyList()
+        val refAssets=activeReferenceAssets()
+        val refs=buildList {
+            if(edit&&state.get().imagePath!=null)add(ReferenceImage(Path.of(state.get().imagePath!!),current?.mime?:"image/png"))
+            refAssets.forEach{a->val p=pp.root.resolve(a.path);if(none{it.path==p})add(ReferenceImage(p,a.mime))}
+        }
         val mask=if(edit&&caps.maskEditing)state.get().maskPath?.let{ReferenceImage(Path.of(it),"image/png")}else null
-        val compiled=PromptCompiler.compile(prompt,preserve=if(edit)listOf("unmasked content","source subject unless explicitly changed")else emptyList())
+        val preserve=when(workflowMode){
+            WorkflowMode.BACKGROUND_REPLACE -> listOf("primary subject","subject edges","unmasked foreground")
+            WorkflowMode.SUBJECT_PRESERVE -> listOf("subject identity","geometry","distinctive details")
+            WorkflowMode.STYLE_TRANSFER -> listOf("source composition","source geometry")
+            else -> if(edit)listOf("unmasked content","source subject unless explicitly changed") else emptyList()
+        }
+        val compiled=PromptCompiler.compile(prompt,preserve=preserve)
         val parentVersion=currentVersionId();val parentAsset=current?.id;val generationId=newId("gen")
         val parentGeneration=parentVersion?.let(graph::get)?.generationId?.let{id->generations.lastOrNull{it.id==id}}
         val previousContext=if(edit&&caps.multiTurnEditing&&parentGeneration?.providerId.equals(providerId,true)&&parentGeneration?.model==model)parentGeneration.providerContextId else null
         val req=GenerationRequest(
-            prompt=compiled.compiled,model=model,references=refs,mask=mask,variants=variants,quality=quality,
-            aspectRatio=aspectRatio,transparent=transparent,previousResponseId=previousContext,metadata=metadata
+            prompt=compiled.compiled,model=model,references=refs,mask=mask,variants=variants,width=width,height=height,quality=quality,
+            aspectRatio=aspectRatio,outputFormat=outputFormat,transparent=transparent,previousResponseId=previousContext,
+            metadata=metadata+mapOf("workflowMode" to workflowMode.name)
         )
-        state.update{it.copy(provider=providerId.uppercase(),model=model,jobState="QUEUED",message="REQUEST ${req.id}")}
+        CapabilityValidator.validate(req,caps,edit)
+        val inputAssetIds=(listOfNotNull(parentAsset)+refAssets.map{it.id}).distinct()
+        val context=linkedMapOf(
+            "parentVersionId" to (parentVersion?:""),
+            "parentAssetId" to (parentAsset?:""),
+            "promptId" to (promptId?:""),
+            "userPrompt" to prompt,
+            "compiledPrompt" to compiled.compiled,
+            "generationId" to generationId,
+            "workflowMode" to workflowMode.name,
+            "maskId" to (if(mask==null)"" else currentMaskId.orEmpty()),
+            "inputAssetIds" to inputAssetIds.joinToString(",")
+        )
+        state.update{it.copy(provider=providerId.uppercase(),model=model,workflowMode=workflowMode,jobState="QUEUED",message="REQUEST "+req.id)}
         val eng=requireNotNull(engine)
-        eng.submit(providerId,req,edit,budget){result->
-            result.onSuccess{res->
-                runCatching{
-                    val outputIds=mutableListOf<String>();val outputPaths=mutableListOf<Path>()
-                    res.images.forEachIndexed{i,gi->
-                        val ext=when(gi.mime){"image/jpeg"->"jpg";"image/webp"->"webp";else->"png"}
-                        val file=pp.generated.resolve("${res.requestId}-${i+1}.$ext");Files.write(file,gi.bytes);outputPaths.add(file)
-                        val im=ImageIO.read(file.toFile())
-                        val a=ImageAsset(kind=AssetKind.GENERATED,path=pp.root.relativize(file).toString(),mime=gi.mime,width=im?.width?:0,height=im?.height?:0,sha256=sha256(gi.bytes),sourceAssetId=parentAsset,provenance="$providerId/$model")
-                        assets[a.id]=a;db!!.saveAsset(a);outputIds+=a.id
-                        val v=VersionNode(parentId=parentVersion,assetId=a.id,operation=if(edit)VersionOperation.EDIT else VersionOperation.GENERATE,name="${if(edit)"edit" else "generate"}.${i+1}",promptId=promptId,generationId=generationId)
-                        graph.add(v);db!!.saveVersion(v)
-                        if(i==0){project!!.currentVersionId=v.id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)}
-                    }
-                    val endpoint=when{
-                        providerId.equals("gemini",true)->"interactions"
-                        metadata["openAiWorkflow"]?.equals("responses",true)==true->"responses"
-                        edit->"images/edits"
-                        else->"images/generations"
-                    }
-                    val settings=linkedMapOf<String,String>("quality" to (quality?:"auto"),"variants" to variants.toString()).apply{
-                        aspectRatio?.let{put("aspectRatio",it)};putAll(metadata)
-                    }
-                    val retries=eng.snapshot().firstOrNull{it.payload["requestId"]==req.id}?.retryCount?:0
-                    val contextId=res.rawMetadata["interactionId"]?.takeIf{it.isNotBlank()}?:res.rawMetadata["responseId"]?.takeIf{it.isNotBlank()}
-                    val gen=GenerationRecord(
-                        id=generationId,parentImageId=parentAsset,inputImageIds=refs.mapNotNull{parentAsset},maskId=if(mask==null)null else currentMaskId,
-                        promptId=promptId,userPrompt=prompt,compiledPrompt=compiled.compiled,providerId=providerId,model=model,endpoint=endpoint,
-                        settings=settings,outputImageIds=outputIds,durationMs=res.durationMs,retryCount=retries,workerId="GEN.WORKER",
-                        providerRevisedPrompt=res.images.firstOrNull()?.revisedPrompt,providerContextId=contextId
-                    )
-                    generations+=gen;db!!.saveGeneration(gen)
-                    val firstAsset=assets[outputIds.firstOrNull()]
-                    val firstPath=outputPaths.firstOrNull()?.toString()
-                    state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),jobState="COMPLETE",message="GENERATION COMPLETE / ${outputIds.size} OUTPUT(S)")}
-                    outputPaths
-                }.onSuccess{done(Result.success(it))}.onFailure{e->
-                    state.update{it.copy(jobs=eng.snapshot(),jobState="FAILED",message="FAILED / ${e.message}")}
-                    done(Result.failure(e))
-                }
-            }.onFailure{e->
-                val cancelled=e is kotlinx.coroutines.CancellationException
-                state.update{it.copy(jobs=eng.snapshot(),jobState=if(cancelled)"CANCELLED" else "FAILED",message="${if(cancelled)"CANCELLED" else "FAILED"} / ${e.message}")}
-                done(Result.failure(e))
-            }
+        eng.submit(providerId,req,edit,budget,context){result->handleJobResult(eng,req.id,result,done)}
+    }
+
+    fun resumeJob(id:String):WorkerJob{
+        val eng=requireNotNull(engine){"Create/open a project first"}
+        require(eng.canResume(id)){"Job cannot be resumed; it may predate resumable request persistence"}
+        state.update{it.copy(jobState="QUEUED",message="RESUME REQUESTED / "+id)}
+        return eng.resume(id){result->
+            val req=eng.request(id)
+            if(req==null){
+                state.update{it.copy(jobs=eng.snapshot(),jobState="FAILED",message="RESUME FAILED / request unavailable")}
+            }else handleJobResult(eng,req.id,result){}
         }
+    }
+
+    fun resumableJobs():List<WorkerJob> = engine?.snapshot().orEmpty().filter{engine?.canResume(it.id)==true}
+
+    private fun handleJobResult(
+        eng:JobEngine,requestId:String,result:Result<GenerationResult>,done:(Result<List<Path>>)->Unit
+    ){
+        val job=eng.snapshot().firstOrNull{it.payload["requestId"]==requestId}
+        result.onSuccess{res->
+            runCatching{admitGenerationResult(requireNotNull(job){"Generation job disappeared"},res)}
+                .onSuccess{done(Result.success(it))}
+                .onFailure{e->state.update{it.copy(jobs=eng.snapshot(),jobState="FAILED",message="FAILED / "+e.message)};done(Result.failure(e))}
+        }.onFailure{e->
+            val cancelled=e is kotlinx.coroutines.CancellationException
+            state.update{it.copy(jobs=eng.snapshot(),jobState=if(cancelled)"CANCELLED" else "FAILED",message=(if(cancelled)"CANCELLED" else "FAILED")+" / "+e.message)}
+            done(Result.failure(e))
+        }
+    }
+
+    private fun admitGenerationResult(job:WorkerJob,res:GenerationResult):List<Path>{
+        val pp=requireNotNull(paths);val eng=requireNotNull(engine);val ctx=eng.context(job.id);val req=requireNotNull(eng.request(job.id))
+        val parentVersion=ctx["parentVersionId"]?.takeIf{it.isNotBlank()};val parentAsset=ctx["parentAssetId"]?.takeIf{it.isNotBlank()}
+        val promptId=ctx["promptId"]?.takeIf{it.isNotBlank()};val generationId=ctx["generationId"]?.takeIf{it.isNotBlank()}?:newId("gen")
+        val workflow=ctx["workflowMode"]?.let{runCatching{WorkflowMode.valueOf(it)}.getOrNull()}?:WorkflowMode.QUICK_GENERATE
+        val editing=job.type=="image-edit"
+        val operation=when(workflow){
+            WorkflowMode.STYLE_TRANSFER->VersionOperation.STYLE_TRANSFER
+            WorkflowMode.BACKGROUND_REPLACE->VersionOperation.BACKGROUND_REPLACE
+            WorkflowMode.REFERENCE_REMIX->VersionOperation.REMIX
+            WorkflowMode.MASK_EDIT->VersionOperation.MASK_EDIT
+            else->if(editing)VersionOperation.EDIT else VersionOperation.GENERATE
+        }
+        val outputIds=mutableListOf<String>();val outputPaths=mutableListOf<Path>()
+        res.images.forEachIndexed{i,gi->
+            val ext=when(gi.mime){"image/jpeg"->"jpg";"image/webp"->"webp";else->"png"}
+            val file=pp.generated.resolve(res.requestId+"-"+(i+1)+"."+ext);Files.write(file,gi.bytes);outputPaths+=file
+            val im=ImageIO.read(file.toFile())
+            val a=ImageAsset(kind=AssetKind.GENERATED,path=pp.root.relativize(file).toString(),mime=gi.mime,width=im?.width?:0,height=im?.height?:0,sha256=sha256(gi.bytes),sourceAssetId=parentAsset,provenance=res.provider+"/"+res.model)
+            assets[a.id]=a;db!!.saveAsset(a);outputIds+=a.id
+            val v=VersionNode(parentId=parentVersion,assetId=a.id,operation=operation,name=workflow.name.lowercase()+"."+(i+1),promptId=promptId,generationId=generationId)
+            graph.add(v);db!!.saveVersion(v)
+            if(i==0){project!!.currentVersionId=v.id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)}
+        }
+        val endpoint=when{
+            res.provider.equals("gemini",true)->"interactions"
+            req.metadata["openAiWorkflow"]?.equals("responses",true)==true->"responses"
+            editing->"images/edits"
+            else->"images/generations"
+        }
+        val settings=linkedMapOf<String,String>(
+            "quality" to (req.quality?:"auto"),"variants" to req.variants.toString(),"outputFormat" to req.outputFormat,"workflowMode" to workflow.name
+        ).apply{
+            req.aspectRatio?.let{put("aspectRatio",it)};req.width?.let{put("width",it.toString())};req.height?.let{put("height",it.toString())};putAll(req.metadata)
+        }
+        val contextId=res.rawMetadata["interactionId"]?.takeIf{it.isNotBlank()}?:res.rawMetadata["responseId"]?.takeIf{it.isNotBlank()}
+        val inputIds=ctx["inputAssetIds"].orEmpty().split(',').filter{it.isNotBlank()}
+        val gen=GenerationRecord(
+            id=generationId,parentImageId=parentAsset,inputImageIds=inputIds,maskId=ctx["maskId"]?.takeIf{it.isNotBlank()},
+            promptId=promptId,userPrompt=ctx["userPrompt"]?:req.prompt,compiledPrompt=ctx["compiledPrompt"]?:req.prompt,
+            providerId=res.provider,model=res.model,endpoint=endpoint,settings=settings,outputImageIds=outputIds,
+            durationMs=res.durationMs,retryCount=job.retryCount,workerId="GEN.WORKER",
+            providerRevisedPrompt=res.images.firstOrNull()?.revisedPrompt,providerContextId=contextId
+        )
+        generations.removeIf{it.id==generationId};generations+=gen;db!!.saveGeneration(gen)
+        val firstAsset=assets[outputIds.firstOrNull()];val firstPath=outputPaths.firstOrNull()?.toString()
+        state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),jobState="COMPLETE",message="GENERATION COMPLETE / "+outputIds.size+" OUTPUT(S)")}
+        return outputPaths
     }
 
     fun cancelActiveJobs():Int{
