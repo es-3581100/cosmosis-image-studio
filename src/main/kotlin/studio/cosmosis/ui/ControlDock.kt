@@ -210,9 +210,40 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     fun openCommandPalette(){
         val d=JDialog(this,"COSMOSIS / COMMAND",false);d.layout=BorderLayout();d.preferredSize=Dimension(650,460);d.background=OffworldTheme.background
         val query=JTextField();val list=DefaultListModel<CommandRef>();val results=JList(list);d.add(query,BorderLayout.NORTH);d.add(JScrollPane(results),BorderLayout.CENTER)
-        val base=listOf(CommandRef("ACTIONS / Import image"){chooseImage()},CommandRef("ACTIONS / Paste image"){runCatching{controller.importClipboardImage()}.onFailure(::showError)},CommandRef("ACTIONS / Mask editor"){openMask()},CommandRef("ACTIONS / Smart saliency mask"){runCatching{controller.smartSaliencyMask()}.onFailure(::showError)},CommandRef("ACTIONS / Rotate 90°"){runCatching{controller.rotateCurrent(true)}.onFailure(::showError)},CommandRef("ACTIONS / Flip horizontal"){runCatching{controller.flipCurrent(true)}.onFailure(::showError)},CommandRef("ACTIONS / Crop"){cropDialog()},CommandRef("ACTIONS / Generate"){generate(false)},CommandRef("ACTIONS / Edit current"){generate(true)},CommandRef("ACTIONS / Agent Build"){runAgentBuildDialog()},CommandRef("ACTIONS / Fit image"){controller.resetView()},CommandRef("DOCUMENTATION / Hyper Index"){val p=Path.of("docs/AGENT_USER_README.html").toAbsolutePath();Desktop.getDesktop().browse(p.toUri())})
-        fun rebuild(){list.clear();val q=query.text.trim();base.filter{q.isBlank()||it.label.contains(q,true)}.forEach(list::addElement);if(q.isNotBlank()){controller.promptSearch(q).take(8).forEach{p->list.addElement(CommandRef("PROMPT / ${p.treePath} / ${p.title}"){loadPrompt(p.id)})};controller.agentIndex.lookup(q,6).forEach{e->list.addElement(CommandRef("DOC / ${e.capability} / ${e.module}"){status.text=controller.agentIndex.contextPacket(q).replace('\n',' ').take(240)})}}}
-        query.document.addDocumentListener(object:DocumentListener{override fun insertUpdate(e:DocumentEvent)=rebuild();override fun removeUpdate(e:DocumentEvent)=rebuild();override fun changedUpdate(e:DocumentEvent)=rebuild()});query.addActionListener{results.selectedValue?.let{it.action();d.dispose()}};results.addMouseListener(object:java.awt.event.MouseAdapter(){override fun mouseClicked(e:java.awt.event.MouseEvent){if(e.clickCount==2)results.selectedValue?.let{it.action();d.dispose()}}});rebuild();d.pack();d.setLocationRelativeTo(this);d.isVisible=true;query.requestFocusInWindow()
+        val base=mutableListOf(
+            CommandRef("ACTIONS / Import image"){chooseImage()},
+            CommandRef("ACTIONS / Add reference image"){chooseReference()},
+            CommandRef("ACTIONS / Paste image"){runCatching{controller.importClipboardImage()}.onFailure(::showError)},
+            CommandRef("ACTIONS / Image to prompt"){openImageToPrompt()},
+            CommandRef("ACTIONS / Mask editor"){openMask()},
+            CommandRef("ACTIONS / Smart subject mask"){runCatching{controller.smartSaliencyMask()}.onFailure(::showError)},
+            CommandRef("ACTIONS / Rotate 90°"){runCatching{controller.rotateCurrent(true)}.onFailure(::showError)},
+            CommandRef("ACTIONS / Flip horizontal"){runCatching{controller.flipCurrent(true)}.onFailure(::showError)},
+            CommandRef("ACTIONS / Crop"){cropDialog()},
+            CommandRef("ACTIONS / Resize"){resizeDialog()},
+            CommandRef("ACTIONS / Upscale"){upscaleDialog()},
+            CommandRef("ACTIONS / Export current image"){exportCurrentImage()},
+            CommandRef("ACTIONS / Agent Build"){runAgentBuildDialog()},
+            CommandRef("ACTIONS / Fit image"){controller.resetView()},
+            CommandRef("MASK / Toggle overlay"){controller.setMaskVisible(!state.get().maskVisible)},
+            CommandRef("DOCUMENTATION / Hyper Index"){val p=Path.of("docs/AGENT_USER_README.html").toAbsolutePath();if(Files.exists(p))Desktop.getDesktop().browse(p.toUri())}
+        )
+        WorkflowMode.entries.forEach{mode->base+=CommandRef("WORKFLOW / "+mode.name.replace('_',' ')){workflowMode.selectedItem=mode;controller.setWorkflowMode(mode)}}
+        controller.resumableJobs().forEach{job->base+=CommandRef("RESUME / "+job.id.take(12)+" / "+job.type){runCatching{controller.resumeJob(job.id)}.onFailure(::showError)}}
+        fun rebuild(){
+            list.clear();val q=query.text.trim()
+            base.filter{q.isBlank()||it.label.contains(q,true)}.forEach(list::addElement)
+            if(q.isNotBlank()){
+                controller.promptSearch(q).take(8).forEach{p->list.addElement(CommandRef("PROMPT / "+p.treePath+" / "+p.title){loadPrompt(p.id)})}
+                controller.agentIndex.lookup(q,6).forEach{e->list.addElement(CommandRef("DOC / "+e.capability+" / "+e.module){status.text=controller.agentIndex.contextPacket(q).replace('\n',' ').take(240)})}
+            }
+            if(list.size()>0)results.selectedIndex=0
+        }
+        query.document.addDocumentListener(object:DocumentListener{override fun insertUpdate(e:DocumentEvent)=rebuild();override fun removeUpdate(e:DocumentEvent)=rebuild();override fun changedUpdate(e:DocumentEvent)=rebuild()})
+        query.addActionListener{results.selectedValue?.let{it.action();d.dispose()}}
+        results.addMouseListener(object:java.awt.event.MouseAdapter(){override fun mouseClicked(e:java.awt.event.MouseEvent){if(e.clickCount==2)results.selectedValue?.let{it.action();d.dispose()}}})
+        results.inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER,0),"run");results.actionMap.put("run",object:AbstractAction(){override fun actionPerformed(e:java.awt.event.ActionEvent?){results.selectedValue?.let{it.action();d.dispose()}}})
+        rebuild();d.pack();d.setLocationRelativeTo(this);d.isVisible=true;query.requestFocusInWindow()
     }
 
     private fun runAgentBuildDialog(){
@@ -347,25 +378,49 @@ Run this bounded plan?""".trimIndent()
         val pid=provider.selectedItem?.toString()?:return
         val mid=model.editor.item?.toString()?.trim().orEmpty()
         if(mid.isBlank()){capabilityLabel.text="No model selected";return}
-        runCatching{controller.capabilitiesFor(pid,mid)}.onSuccess{c->
+        runCatching{controller.capabilitiesFor(pid,mid)}.onSuccess{caps->
             capabilityLabel.text=listOf(
-                "text→image=${c.textToImage}","image→image=${c.imageToImage}","mask=${c.maskEditing}",
-                "multi-ref=${c.multipleReferences} / max ${c.maxReferenceImages}","multi-turn=${c.multiTurnEditing}",
-                "transparent=${c.transparentBackground}","search=${c.searchGrounding}",
-                "ratios=${c.aspectRatios.joinToString().ifBlank{"provider default"}}",
-                "sizes=${c.imageSizes.joinToString().ifBlank{"provider default"}}",
-                "formats=${c.outputFormats.joinToString()}"
+                "text→image="+caps.textToImage,"image→image="+caps.imageToImage,"mask="+caps.maskEditing,
+                "multi-ref="+caps.multipleReferences+" / max "+caps.maxReferenceImages,"multi-turn="+caps.multiTurnEditing,
+                "transparent="+caps.transparentBackground,"search="+caps.searchGrounding,
+                "ratios="+caps.aspectRatios.joinToString().ifBlank{"provider default"},
+                "sizes="+caps.imageSizes.joinToString().ifBlank{"provider default"},
+                "formats="+caps.outputFormats.joinToString()
             ).joinToString("  │  ")
-            transparentOutput.isEnabled=c.transparentBackground;if(!c.transparentBackground)transparentOutput.isSelected=false
-            searchGrounding.isEnabled=c.searchGrounding;if(!c.searchGrounding)searchGrounding.isSelected=false
-            imageSize.isEnabled=c.imageSizes.isNotEmpty();if(!imageSize.isEnabled)imageSize.selectedItem=""
-            aspectRatio.isEnabled=c.aspectRatios.isNotEmpty()||c.customDimensions;if(!aspectRatio.isEnabled)aspectRatio.text=""
+            transparentOutput.isEnabled=caps.transparentBackground;if(!caps.transparentBackground)transparentOutput.isSelected=false
+            searchGrounding.isEnabled=caps.searchGrounding;if(!caps.searchGrounding)searchGrounding.isSelected=false
+            imageSize.isEnabled=caps.imageSizes.isNotEmpty();if(!imageSize.isEnabled)imageSize.selectedItem=""
+            aspectRatio.isEnabled=caps.aspectRatios.isNotEmpty()||caps.customDimensions;if(!aspectRatio.isEnabled)aspectRatio.text=""
+            outputWidth.isEnabled=caps.customDimensions;outputHeight.isEnabled=caps.customDimensions
+            if(!caps.customDimensions){outputWidth.text="";outputHeight.text=""}
+            val currentFormat=outputFormat.selectedItem?.toString()
+            outputFormat.removeAllItems();caps.outputFormats.sorted().forEach(outputFormat::addItem)
+            if(currentFormat!=null&&currentFormat in caps.outputFormats)outputFormat.selectedItem=currentFormat else if(outputFormat.itemCount>0)outputFormat.selectedIndex=0
             val responses=pid.equals("openai",true);providerWorkflow.isEnabled=responses;reasoningModel.isEnabled=responses
             if(!responses){providerWorkflow.selectedItem="direct";reasoningModel.text=""}
-        }.onFailure{capabilityLabel.text="Unavailable: ${it.message}"}
+        }.onFailure{capabilityLabel.text="Unavailable: "+it.message}
     }
     private fun cropDialog(){val s=state.get();if(s.imagePath==null)return showError(IllegalStateException("Import/select an image first"));val x=JTextField("0");val y=JTextField("0");val w=JTextField(s.imageWidth.toString());val h=JTextField(s.imageHeight.toString());val form=JPanel(GridLayout(0,2,8,8)).apply{add(label("X"));add(x);add(label("Y"));add(y);add(label("WIDTH"));add(w);add(label("HEIGHT"));add(h)};if(JOptionPane.showConfirmDialog(this,form,"CROP / PIXELS",JOptionPane.OK_CANCEL_OPTION)!=JOptionPane.OK_OPTION)return;runCatching{controller.cropCurrent(x.text.toInt(),y.text.toInt(),w.text.toInt(),h.text.toInt())}.onFailure(::showError)}
-    private fun installKeys(){KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher{e->if(e.id!=KeyEvent.KEY_PRESSED)return@addKeyEventDispatcher false;val ctrl=e.isControlDown||e.isMetaDown;when{ctrl&&e.keyCode==KeyEvent.VK_Z&&prompt.hasFocus()->{if(e.isShiftDown){if(undo.canRedo())undo.redo()}else if(undo.canUndo())undo.undo();true};ctrl&&e.keyCode==KeyEvent.VK_Y&&prompt.hasFocus()->{if(undo.canRedo())undo.redo();true};ctrl&&e.keyCode==KeyEvent.VK_S->{savePrompt();true};ctrl&&e.keyCode==KeyEvent.VK_ENTER->{generate(false);true};ctrl&&e.keyCode==KeyEvent.VK_K->{openCommandPalette();true};ctrl&&e.keyCode==KeyEvent.VK_V&&!prompt.hasFocus()->{runCatching{controller.importClipboardImage()}.onFailure(::showError);true};e.keyCode==KeyEvent.VK_0&&!prompt.hasFocus()->{controller.resetView();true};else->false}}}
+    private fun installKeys(){KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher{e->
+        if(e.id!=KeyEvent.KEY_PRESSED)return@addKeyEventDispatcher false
+        val ctrl=e.isControlDown||e.isMetaDown
+        val focus=KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+        val typing=focus is JTextComponent || focus is JComboBox<*>
+        when{
+            ctrl&&e.keyCode==KeyEvent.VK_Z&&prompt.hasFocus()->{if(e.isShiftDown){if(undo.canRedo())undo.redo()}else if(undo.canUndo())undo.undo();true}
+            ctrl&&e.keyCode==KeyEvent.VK_Y&&prompt.hasFocus()->{if(undo.canRedo())undo.redo();true}
+            ctrl&&e.keyCode==KeyEvent.VK_S->{savePrompt();true}
+            ctrl&&e.keyCode==KeyEvent.VK_ENTER->{runSelectedWorkflow();true}
+            ctrl&&e.keyCode==KeyEvent.VK_K->{openCommandPalette();true}
+            ctrl&&e.keyCode==KeyEvent.VK_V&&!typing->{runCatching{controller.importClipboardImage()}.onFailure(::showError);true}
+            !typing&&e.keyCode==KeyEvent.VK_G->{workflowMode.selectedItem=WorkflowMode.QUICK_GENERATE;controller.setWorkflowMode(WorkflowMode.QUICK_GENERATE);true}
+            !typing&&e.keyCode==KeyEvent.VK_E->{workflowMode.selectedItem=WorkflowMode.EDIT_EXISTING;controller.setWorkflowMode(WorkflowMode.EDIT_EXISTING);true}
+            !typing&&e.keyCode==KeyEvent.VK_M->{workflowMode.selectedItem=WorkflowMode.MASK_EDIT;controller.setWorkflowMode(WorkflowMode.MASK_EDIT);true}
+            !typing&&e.keyCode==KeyEvent.VK_C->{controller.setCompareVersion(if(state.get().compareMode=="OFF")versionList.selectedValue?.id else null);true}
+            !typing&&e.keyCode==KeyEvent.VK_0->{controller.resetView();true}
+            else->false
+        }
+    }}
     private fun applyTheme(){UIManager.put("Panel.background",OffworldTheme.background);UIManager.put("TabbedPane.background",OffworldTheme.background);UIManager.put("TabbedPane.foreground",OffworldTheme.foreground);UIManager.put("Label.foreground",OffworldTheme.foreground);UIManager.put("Button.background",Color(0x1C,0x1C,0x18));UIManager.put("Button.foreground",OffworldTheme.foreground);UIManager.put("TextField.background",Color(0x13,0x13,0x10));UIManager.put("TextField.foreground",OffworldTheme.foreground);UIManager.put("TextArea.background",Color(0x0D,0x0D,0x0B));UIManager.put("TextArea.foreground",OffworldTheme.foreground);UIManager.put("Tree.background",Color(0x13,0x13,0x10));UIManager.put("Tree.foreground",OffworldTheme.foreground);UIManager.put("List.background",Color(0x13,0x13,0x10));UIManager.put("List.foreground",OffworldTheme.foreground);UIManager.put("ScrollPane.background",OffworldTheme.background);UIManager.put("Component.arc",0)}
     private fun panel(layout:LayoutManager=FlowLayout()):JPanel=JPanel(layout).apply{background=OffworldTheme.background;border=BorderFactory.createEmptyBorder(13,13,13,13)}
     private fun label(s:String)=JLabel(s).apply{font=Font(Font.MONOSPACED,Font.PLAIN,11);foreground=OffworldTheme.muted}
