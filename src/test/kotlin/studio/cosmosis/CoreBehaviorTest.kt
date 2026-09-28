@@ -39,6 +39,32 @@ class CoreBehaviorTest {
     }
     @Test fun secretsAreRedacted(){val r=Redaction.sanitize("api_key=supersecret " + "sk-proj-" + "abcdefghijklmnopqrstuvwxyz");assertFalse(r.contains("supersecret"));assertFalse(r.contains("sk-proj-"))}
     @Test fun ormlFailsClosedWithoutAdapter(){val result=OrmlExecutor().invoke(OrmlInvocation("smart-subject-mask","x"));assertFalse(result.ok)}
+    @Test fun ormlAdapterRequiresConcreteOutput(){
+        val input=Files.createTempFile("orml-input",".png")
+        val output=Files.createTempFile("orml-output",".png")
+        val adapter=object:OrmlAdapter{
+            override val capabilityId="smart-subject-mask"
+            override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,true,listOf(output.toString()),message="ok")
+        }
+        val executor=OrmlExecutor(listOf(adapter))
+        assertEquals("READY",executor.status(capabilityId))
+        assertTrue(executor.invoke(OrmlInvocation(capabilityId,input.toString())).ok)
+        assertTrue(executor.diagnostics().adapters.containsKey(capabilityId))
+        val missing=output.resolveSibling("missing-output.png")
+        val bad=object:OrmlAdapter{
+            override val capabilityId="smart-subject-mask"
+            override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,true,listOf(missing.toString()),message="claimed")
+        }
+        val rejected=OrmlExecutor(listOf(bad)).invoke(OrmlInvocation(capabilityId,input.toString()))
+        assertFalse(rejected.ok);assertContains(rejected.message,"missing output")
+    }
+    @Test fun ormlDuplicateAdaptersAreRejected(){
+        val one=object:OrmlAdapter{override val capabilityId="smart-subject-mask";override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,false,message="one")}
+        val two=object:OrmlAdapter{override val capabilityId="smart-subject-mask";override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,false,message="two")}
+        val executor=OrmlExecutor(listOf(one,two))
+        assertNotEquals("READY",executor.status("smart-subject-mask"))
+        assertTrue(executor.diagnostics().errors.any{it.contains("ambiguous")})
+    }
     @Test fun modelRegistryMigrates(){val r=ModelRegistry.parse("""{"schemaVersion":0,"models":[]}""").migrate();assertEquals(ModelRegistry.CURRENT_SCHEMA,r.schemaVersion)}
     @Test fun agentIndexFindsNaturalLanguageIntent(){val d=Files.createTempDirectory("docs");Files.writeString(d.resolve("x.html"),"""<section id="s"></section><script id="agent-index" type="application/json">{"capability":"smart-subject-mask","module":"x","intents":["remove-background"],"aliases":["cutout"]}</script>""");val idx=AgentIndex(d);idx.rebuild();assertTrue(idx.lookup("remove background").isNotEmpty())}
 }
