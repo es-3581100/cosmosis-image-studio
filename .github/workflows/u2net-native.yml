@@ -57,7 +57,4 @@ jobs:
           echo "COSMOSIS_ORML_U2NET_RUNNER=$GITHUB_WORKSPACE/$RUNNER" >> "$GITHUB_ENV"
 
       - name: Verify Cosmosis desktop admission and lineage path
-        env:
-          COSMOSIS_ORML_U2NET_RUNNER: ${{ env.COSMOSIS_ORML_U2NET_RUNNER }}
-          COSMOSIS_ORML_U2NET_MODEL: ${{ env.COSMOSIS_ORML_U2NET_MODEL }}
         run: gradle --no-daemon acceptanceSmoke --stacktrace
