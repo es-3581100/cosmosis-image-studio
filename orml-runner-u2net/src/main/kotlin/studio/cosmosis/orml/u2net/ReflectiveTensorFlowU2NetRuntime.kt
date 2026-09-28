@@ -120,12 +120,11 @@ internal class TensorFlowBinding(private val classLoader:ClassLoader) {
             val shape=shapeClass.getMethod("of",LongArray::class.java)
                 .invoke(null,longArrayOf(1,U2NetModelPin.height.toLong(),U2NetModelPin.width.toLong(),3))
             inputTensor=tFloat32Class.getMethod("tensorOf",shapeClass).invoke(null,shape)
-            val inputData=invokeCompatible(inputTensor,"data")?:inputTensor
-            val setFloat=findMethod(inputData.javaClass,"setFloat",2)
+            val setFloat=findMethod(inputTensor.javaClass,"setFloat",2)
 
             var p=0
             for(y in 0 until U2NetModelPin.height)for(x in 0 until U2NetModelPin.width)for(c in 0..2){
-                setFloat.invoke(inputData,input[p++],longArrayOf(0,y.toLong(),x.toLong(),c.toLong()))
+                setFloat.invoke(inputTensor,input[p++],longArrayOf(0,y.toLong(),x.toLong(),c.toLong()))
             }
 
             var runner=invokeCompatible(session,"runner")?:error("TensorFlow Session.runner() returned null")
@@ -133,13 +132,13 @@ internal class TensorFlowBinding(private val classLoader:ClassLoader) {
             runner=invokeCompatible(runner,"fetch",U2NetModelPin.outputTensor)?:runner
             val outputs=invokeCompatible(runner,"run") as? List<*> ?:error("TensorFlow runner did not return a tensor list")
             outputTensor=outputs.firstOrNull()?:error("TensorFlow U2Net returned no output tensor")
-            val outputData=invokeCompatible(outputTensor,"data")?:outputTensor
-            val getFloat=findMethod(outputData.javaClass,"getFloat",1)
+            require(tFloat32Class.isInstance(outputTensor)){"U2Net output tensor is not TFloat32"}
+            val getFloat=findMethod(outputTensor.javaClass,"getFloat",1)
 
             val result=FloatArray(U2NetModelPin.width*U2NetModelPin.height)
             var o=0
             for(y in 0 until U2NetModelPin.height)for(x in 0 until U2NetModelPin.width){
-                val v=getFloat.invoke(outputData,longArrayOf(0,y.toLong(),x.toLong(),0)) as Number
+                val v=getFloat.invoke(outputTensor,longArrayOf(0,y.toLong(),x.toLong(),0)) as Number
                 result[o++]=v.toFloat()
             }
             return result
