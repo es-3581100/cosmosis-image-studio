@@ -220,7 +220,10 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val localAnalysis=sourcePath?.let{runCatching{ImageToPrompt.extract(it,PromptOutputMode.SUBJECT_REPLACEABLE)}.getOrNull()}
         val activeDirectives=enabledDirectives()
         val shouldSeedMask=sourcePath!=null&&state.get().maskPath==null&&Regex("(?i)\\b(background|replace|preserve|subject|person|region|clothing|mask)\\b").containsMatchIn(intent)
-        if(shouldSeedMask)runCatching{smartSaliencyMask()}
+        val personMaskIntent=Regex("(?i)\\b(person|people|body|clothing|shirt|dress|garment|arm|leg|torso)\\b").containsMatchIn(intent)
+        val maskAttempt=if(shouldSeedMask)runCatching{
+            if(state.get().ormlEnabled&&personMaskIntent&&orml.status("person-body-mask")=="READY")ormlPersonMask() else smartSaliencyMask()
+        }else null
         val compiledIntent=buildString{
             append(intent.trim())
             if(activeDirectives.isNotEmpty()){
@@ -248,6 +251,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
             appendLine("budget.generations=${plan.budget.maxGenerations}");appendLine("budget.retries=${plan.budget.maxRetries}")
             appendLine("budget.parallel=${plan.budget.maxParallelWorkers}");appendLine("budget.timeout=${plan.budget.timeoutSeconds}")
             appendLine("documentation:");appendLine(docsPacket.ifBlank{"none"})
+            appendLine("mask.preparation="+when{maskAttempt==null->"not-requested";maskAttempt.isSuccess->"ready / "+maskAttempt.getOrNull()?.fileName;else->"failed / "+(maskAttempt.exceptionOrNull()?.message?:"unknown")})
             appendLine("directives:");activeDirectives.forEach{appendLine(it.id+" / "+it.title)}
             appendLine("steps:");plan.steps.forEach{appendLine("${it.index}. ${it.role}: ${it.action}")}
         }))
