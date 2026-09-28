@@ -15,8 +15,9 @@
 | LiteLLM/custom OpenAI-compatible | Implemented adapter | live gateway test not run here |
 | Durable worker queue | Implemented | canonical request/reference/mask/budget persistence, bounded retry/timeout/spend, cancellation result discard, crash-to-INTERRUPTED recovery, explicit failed/interrupted resume |
 | ORML discovery | Implemented | U2Net, BodyPix, classifier, super-resolution capability descriptors + docs; runtime probes do not initialize model classes |
-| ORML adapter SPI | Implemented | `ServiceLoader` discovery, duplicate-provider rejection, adapter diagnostics, concrete-output validation, and fail-closed execution |
-| ORML native inference | **Not verified/complete** | No ORML model adapter is bundled. A separately installed, audited adapter must expose the SPI before Cosmosis reports `READY`; real U2Net/BodyPix/classifier/upscaler inference remains a workstation verification task |
+| ORML adapter/runtime integration | Implemented | `ServiceLoader` adapters plus isolated executable runners; duplicate/invalid provider rejection, bounded timeout, redacted runner output, concrete-output validation, project enable/disable, fail-closed execution |
+| ORML editor semantics | Implemented / runtime-dependent | U2Net → smart subject mask, BodyPix → person mask, classifier → derived embedding metadata, super-resolution → UPSCALE child version; Agent Build can select BodyPix for person/clothing intents when READY |
+| ORML native model execution | External verification boundary | Cosmosis does not bundle the legacy TensorFlow/model stack. A configured audited runner owns that lifecycle; Cosmosis reports `READY` only when an adapter/runner is actually installed. Specific native model execution must be verified on that target runtime |
 | Agent Build | Implemented | visible Director plan, generations/retries/parallelism/timeout/spend/fallback controls, inspectable project directives, indexed local knowledge, critic annotations, lineage/report persistence |
 | HTML hyper-index/runtime lookup | Implemented | intent search/context packet; natural-language intent smoke PASS |
 | Project HTML report | Implemented | CSP self-contained, secret redaction; smoke PASS |
