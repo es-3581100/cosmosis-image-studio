@@ -97,7 +97,7 @@ class CoreBehaviorTest {
             "done",
             "cp \"\\$in\" \"\\$out\"",
             "echo \"api_key=supersecret runner-ok\""
-        ).joinToString("\\n")+"\\n")
+        ).joinToString("\n")+"\n")
         val perms=Files.getPosixFilePermissions(runner).toMutableSet()
         perms+=java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE
         Files.setPosixFilePermissions(runner,perms)
