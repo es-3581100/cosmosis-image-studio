@@ -10,4 +10,4 @@ No reference-application implementation source is vendored in this repository.
 - image-to-prompt — behavioral reference only
 - image-2-reverse-prompt — MIT; conceptual attribution retained in built-in Style DNA recipe
 - html-anything — MIT-0; conceptual artifact-format reference only
-- ORML (`openrndr/orml`) — optional runtime capability family; upstream publication metadata declares BSD-2-Clause. Source is not copied or bundled. Models are fetched/managed by the ORML runtime only when the user enables a capability.
+- ORML (`openrndr/orml`) — optional runtime capability family; upstream publication metadata declares BSD-2-Clause. Source, TensorFlow runtime, and models are not copied or bundled. A user-configured ServiceLoader adapter or isolated executable runner owns model/runtime lifecycle; Cosmosis owns only discovery, admission, timeout, result validation, project enable/disable state, and lineage.

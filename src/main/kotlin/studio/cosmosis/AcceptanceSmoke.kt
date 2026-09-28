@@ -24,12 +24,20 @@ fun main() {
         studio.importImage(source)
         require(state.get().imagePath!=null && state.get().imageWidth==192 && state.get().imageHeight==128)
         val rootVersion=state.get().currentVersion
+        val reference=studio.addReferenceImage(source)
+        require(studio.referenceImages().single().id==reference.id)
+        val directive=studio.saveDirective("Acceptance guard","Preserve user-visible text and source identity unless explicitly changed.")
+        studio.setAppearance(reducedMotion=true,motionLevel="subtle",uiDensity="compact")
+        studio.setMaskOverlayStyle("#00AAFF",.35)
 
         val extracted=studio.analyzeCurrent()
         require(extracted.contains("STYLE DNA"))
+        require(state.get().analysisRegions.isNotEmpty())
+        require(Files.list(projectRoot.resolve("metadata")).use{stream->stream.anyMatch{it.fileName.toString().startsWith("analysis-")}})
         val prompt=studio.savePrompt("Acceptance prompt",extracted,"MY PROMPTS/Acceptance")
         val mask=studio.smartSaliencyMask()
         require(Files.size(mask)>0)
+        studio.setMaskVisible(false);require(!state.get().maskVisible);studio.setMaskVisible(true)
 
         studio.generate(
             prompt="Preserve the central subject and alter only the selected region.",
@@ -56,6 +64,10 @@ fun main() {
         studio.setCurrentVersion(editVersion)
         studio.rotateCurrent(true)
         require(state.get().imageWidth==128 && state.get().imageHeight==192)
+        studio.resizeCurrent(96,144);require(state.get().imageWidth==96&&state.get().imageHeight==144)
+        studio.upscaleCurrent(2);require(state.get().imageWidth==192&&state.get().imageHeight==288)
+        require(studio.versionNodes().any{it.operation==VersionOperation.RESIZE})
+        require(studio.versionNodes().any{it.operation==VersionOperation.UPSCALE})
 
         // Agent Build executes the visible Director plan through the same bounded worker path.
         studio.setCurrentVersion(rootVersion)
@@ -66,6 +78,7 @@ fun main() {
         )
         awaitAgentBuild(state,agentPlan)
         require(studio.agentBuildReports().any{Files.readString(it).contains("critic:")})
+        require(studio.agentBuildReports().any{Files.readString(it).contains(directive.id)})
         require(studio.allPrompts().any{it.origin==PromptOrigin.AGENT && it.source=="Director/$agentPlan"})
 
         val report=studio.exportReport()
@@ -77,8 +90,12 @@ fun main() {
 
         // Restart/reopen proves the durable local model and does not rerun jobs.
         studio.openProject(projectRoot)
-        require(studio.versionNodes().size>=5)
+        require(studio.versionNodes().size>=7)
         require(state.get().imagePath!=null)
+        require(studio.referenceImages().any{it.id==reference.id})
+        require(studio.allDirectives().any{it.id==directive.id&&it.enabled})
+        require(state.get().reducedMotion&&state.get().motionLevel=="subtle"&&state.get().uiDensity=="compact")
+        require(state.get().maskOverlayColor=="#00AAFF")
         println("ACCEPTANCE_SMOKE_PASS project=$projectRoot versions=${studio.versionNodes().size}")
     }
 }

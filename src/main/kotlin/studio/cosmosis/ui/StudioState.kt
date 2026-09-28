@@ -1,6 +1,7 @@
 package studio.cosmosis.ui
 
 import studio.cosmosis.*
+import studio.cosmosis.analysis.VisualRegion
 import studio.cosmosis.workers.JobPlan
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
@@ -15,6 +16,10 @@ data class UiSnapshot(
     val comparePath:String?=null,
     val maskPath:String?=null,
     val maskOverlayPath:String?=null,
+    val referencePaths:List<String> = emptyList(),
+    val analysisRegions:List<VisualRegion> = emptyList(),
+    val analysisVisible:Boolean=true,
+    val ormlEnabled:Boolean=true,
     val provider:String="OPENAI",
     val model:String="gpt-image-2.5-flare",
     val jobState:String="IDLE",
@@ -28,7 +33,13 @@ data class UiSnapshot(
     val panY:Double=0.0,
     val compareMode:String="OFF",
     val maskVisible:Boolean=true,
+    val maskOverlayColor:String="#EF4444",
+    val maskOverlayOpacity:Double=.42,
+    val workflowMode:WorkflowMode=WorkflowMode.QUICK_GENERATE,
+    val selectedTool:String="SEL",
     val reducedMotion:Boolean=false,
+    val motionLevel:String="normal",
+    val uiDensity:String="comfortable",
     val message:String="READY / LOCAL"
 )
 

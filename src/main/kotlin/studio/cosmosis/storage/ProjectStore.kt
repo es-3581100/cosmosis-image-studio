@@ -14,12 +14,18 @@ object ProjectStore {
         SqliteStore(p.db).use { it.migrate(); it.saveProject(project) }
         return project to p
     }
-    fun importImage(paths:ProjectPaths,source:Path,provenance:String="local-import"):ImageAsset {
+    fun importImage(paths:ProjectPaths,source:Path,provenance:String="local-import"):ImageAsset =
+        importAsset(paths,source,AssetKind.ORIGINAL,provenance)
+
+    fun importReferenceImage(paths:ProjectPaths,source:Path,provenance:String="local-reference"):ImageAsset =
+        importAsset(paths,source,AssetKind.REFERENCE,provenance)
+
+    private fun importAsset(paths:ProjectPaths,source:Path,kind:AssetKind,provenance:String):ImageAsset {
         require(Files.isRegularFile(source)){"Image does not exist: $source"}; val img=requireNotNull(ImageIO.read(source.toFile())){"Unsupported image: $source"}
         val mime=when(source.fileName.toString().substringAfterLast('.',"").lowercase()){"jpg","jpeg"->"image/jpeg";"webp"->"image/webp";else->"image/png"}
         val hash=sha256(source); val ext=when(mime){"image/jpeg"->"jpg";"image/webp"->"webp";else->"png"}; val dest=paths.originals.resolve("$hash.$ext")
         if(!Files.exists(dest)) Files.copy(source,dest)
-        return ImageAsset(kind=AssetKind.ORIGINAL,path=paths.root.relativize(dest).toString(),mime=mime,width=img.width,height=img.height,sha256=hash,provenance=provenance)
+        return ImageAsset(kind=kind,path=paths.root.relativize(dest).toString(),mime=mime,width=img.width,height=img.height,sha256=hash,provenance=provenance)
     }
     fun sha256(path:Path):String { val md=MessageDigest.getInstance("SHA-256"); Files.newInputStream(path).use{input->val b=ByteArray(8192);while(true){val n=input.read(b);if(n<0)break;md.update(b,0,n)}};return md.digest().joinToString(""){"%02x".format(it)} }
     private fun escape(s:String)=s.replace("\\","\\\\").replace("\"","\\\"")

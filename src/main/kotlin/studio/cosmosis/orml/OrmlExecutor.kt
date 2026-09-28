@@ -107,8 +107,9 @@ class OrmlExecutor(
     companion object {
         fun discovered(classLoader: ClassLoader = Thread.currentThread().contextClassLoader
             ?: OrmlAdapter::class.java.classLoader): OrmlExecutor {
-            val discovery = OrmlAdapterDiscovery.discover(classLoader)
-            return OrmlExecutor(discovery.adapters, discovery.errors)
+            val service = OrmlAdapterDiscovery.discover(classLoader)
+            val process = ProcessOrmlAdapters.discover()
+            return OrmlExecutor(service.adapters+process.adapters,service.errors+process.errors)
         }
     }
 

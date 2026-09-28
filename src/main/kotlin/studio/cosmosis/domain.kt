@@ -9,7 +9,7 @@ fun nowIso(): String = Instant.now().toString()
 
 enum class PromptOrigin { LOCAL, UPSTREAM, DERIVED, GENERATED, AGENT }
 enum class AssetKind { ORIGINAL, GENERATED, MASK, PREVIEW, EXPORT, REFERENCE }
-enum class VersionOperation { IMPORT, GENERATE, EDIT, MASK_EDIT, UPSCALE, STYLE_TRANSFER, BACKGROUND_REPLACE, REMIX, ROTATE, FLIP, CROP }
+enum class VersionOperation { IMPORT, GENERATE, EDIT, MASK_EDIT, UPSCALE, RESIZE, STYLE_TRANSFER, BACKGROUND_REPLACE, REMIX, ROTATE, FLIP, CROP }
 enum class JobState { QUEUED, RUNNING, WAITING, COMPLETE, FAILED, CANCELLED, INTERRUPTED }
 enum class WorkerRole { DIRECTOR, PROMPT_COMPILER, VISUAL_ANALYZER, MASK_WORKER, PROVIDER_ROUTER, GENERATION, CRITIC, CURATOR, LINEAGE_WRITER, EXPORT }
 enum class WorkflowMode { QUICK_GENERATE, PRECISION_GENERATE, EDIT_EXISTING, MASK_EDIT, REFERENCE_REMIX, STYLE_TRANSFER, BACKGROUND_REPLACE, SUBJECT_PRESERVE, TEXT_POSTER, IMAGE_TO_PROMPT, BATCH_VARIATIONS, UPSCALE, AGENT_BUILD }
@@ -126,6 +126,15 @@ data class GenerationRecord(
     val providerContextId: String? = null,
     val error: String? = null,
     val createdAt: String = nowIso()
+)
+
+data class AgentDirective(
+    val id: String = newId("directive"),
+    var title: String,
+    var body: String,
+    var enabled: Boolean = true,
+    val createdAt: String = nowIso(),
+    var updatedAt: String = nowIso()
 )
 
 data class WorkerJob(

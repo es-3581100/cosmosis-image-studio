@@ -12,13 +12,27 @@ Requirements: JDK 21 and Gradle 9.8+. The repository intentionally does not vend
 ./gradlew run
 ```
 
-`acceptanceSmoke` is offline and uses the deterministic `local-preview-v1` provider. It exercises project creation, image import, local analysis, prompt persistence, smart mask creation, generation/edit workers, branching lineage, Agent Build + critic output, restart recovery, diagnostics, and HTML report export without provider credentials or paid calls.
+`acceptanceSmoke` is offline and uses the deterministic `local-preview-v1` provider. It exercises project creation, immutable source/reference imports, local analysis + derived overlays, prompt/directive persistence, smart masks and overlay settings, generation/edit workers, branching lineage, rotate/resize/upscale transforms, Agent Build + critic output, restart recovery, diagnostics, and HTML report export without provider credentials or paid calls.
 
 Opt-in paid/network smoke checks:
 
 ```bash
 COSMOSIS_LIVE_PROVIDER_TESTS=1 ./gradlew liveProviderSmoke
 ```
+
+## Workstation workflows
+
+The prompt workspace exposes capability-driven workflow modes rather than making provider APIs the primary mental model:
+
+`QUICK_GENERATE`, `PRECISION_GENERATE`, `EDIT_EXISTING`, `MASK_EDIT`, `REFERENCE_REMIX`, `STYLE_TRANSFER`, `BACKGROUND_REPLACE`, `SUBJECT_PRESERVE`, `TEXT_POSTER`, `IMAGE_TO_PROMPT`, `UPSCALE`, and `AGENT_BUILD`.
+
+Reference images are immutable project assets and are only attached to explicit reference workflows unless a caller opts in through canonical request metadata. Agent directives are project-local, inspectable, enable/disable-able records; enabled directives are included in Agent Build reports.
+
+Interrupted or failed jobs are never auto-resumed. New jobs persist their canonical request, references, mask, metadata and budget so the user can explicitly replay a resumable job through the normal provider/result-admission path.
+
+## OPENRNDR semantic build reference
+
+The supplied OPENRNDR semantic knowledge tree is preserved conceptually in `docs/agent/openrndr/workstation.html`. It maps drawing/rendering, interaction, image/CV, animation, typography and GPU extension points to Cosmosis responsibilities. It is a selection guide, not a requirement to add every ORX module as a runtime dependency.
 
 ## Secrets
 
