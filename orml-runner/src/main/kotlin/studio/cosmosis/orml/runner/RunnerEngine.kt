@@ -72,11 +72,12 @@ class RunnerEngine(
     fun describeJson():String {
         val available=availableCapabilities()
         val caps=CapabilityRegistry.all.joinToString(","){spec->
-            "{"id":""+escape(spec.id)+"","available":"+(spec.id in available)+","output":""+spec.outputKind.name.lowercase()+""}"
+            """{"id":"${escape(spec.id)}","available":${spec.id in available},"output":"${spec.outputKind.name.lowercase()}"}"""
         }
-        val errs=errors.joinToString(","){"""+escape(sanitize(it))+"""}
-        return "{"protocolVersion":""+RUNNER_PROTOCOL_VERSION+"","capabilities":["+caps+"],"errors":["+errs+"]}"
+        val errs=errors.joinToString(","){"\""+escape(sanitize(it))+"\""}
+        return """{"protocolVersion":"$RUNNER_PROTOCOL_VERSION","capabilities":[$caps],"errors":[$errs]}"""
     }
 
-    private fun escape(s:String)=s.replace("\\","\\\\").replace(""","\\"")
+    private fun escape(s:String)=s.replace("\\","\\\\").replace("\"","\\\"")
+
 }
