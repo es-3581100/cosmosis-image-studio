@@ -9,7 +9,12 @@
 | Masks | Implemented | brush/erase, undo/redo, invert, feather, source-asset lineage, PNG persistence, configurable overlay color/opacity/visibility |
 | Version graph | Implemented | branching DAG, no history flattening; open/compare/rename/favorite; local rotate/flip/crop/resize/upscale child versions |
 | Local image→prompt + analysis overlays | Implemented | palette/luma/edge/orientation + OCR/saliency regions; editable structured prompt; derived JSON metadata; toggleable technical canvas overlays |
-| Workflow presets | Implemented | Quick Generate, Precision Generate, Edit Existing, Mask Edit, Reference Remix, Style Transfer, Background Replace, Subject Preserve, Text Poster, Image-to-Prompt, Upscale, Agent Build |\n| Multi-reference workspace | Implemented | immutable reference assets, persistent active reference set, provider capability validation, explicit reference workflows only |\n| Agent directives | Implemented | project-local inspectable CRUD, enabled directives are recorded and injected into Agent Build context |\n| Appearance/accessibility | Implemented | authoritative dark Offworld, reduced-motion flag, motion level, UI density, configurable functional mask overlay; settings persist per project |\n| Current-image export | Implemented | explicit non-destructive export/copy from selected version |\n| OpenAI Images | Implemented adapter | paid live call not run here |
+| Workflow presets | Implemented | Quick Generate, Precision Generate, Edit Existing, Mask Edit, Reference Remix, Style Transfer, Background Replace, Subject Preserve, Text Poster, Image-to-Prompt, Upscale, Agent Build |
+| Multi-reference workspace | Implemented | immutable reference assets, persistent active reference set, provider capability validation, explicit reference workflows only |
+| Agent directives | Implemented | project-local inspectable CRUD, enabled directives are recorded and injected into Agent Build context |
+| Appearance/accessibility | Implemented | authoritative dark Offworld, reduced-motion flag, motion level, UI density, configurable functional mask overlay; settings persist per project |
+| Current-image export | Implemented | explicit non-destructive export/copy from selected version |
+| OpenAI Images | Implemented adapter | paid live call not run here |
 | OpenAI Responses image workflow | Implemented adapter path | paid live call not run here |
 | Gemini image generation/edit | Implemented adapter | Interactions API generation/editing, server-side turn chaining, optional Google Search grounding + thinking controls; paid live smoke remains opt-in |
 | LiteLLM/custom OpenAI-compatible | Implemented adapter | live gateway test not run here |
@@ -22,4 +27,5 @@
 | HTML hyper-index/runtime lookup | Implemented | intent search/context packet; natural-language intent smoke PASS |
 | Project HTML report | Implemented | CSP self-contained, secret redaction; smoke PASS |
 | Full dependency-resolved build | Verified in PR CI | JDK 21 + Gradle 9.8; repeated green `test acceptanceSmoke` runs on workstation-completion branch |
+| Provider spend hard ceiling | Implemented / fail-closed | local preview estimates exactly `$0`; remote routes refuse a hard spend ceiling when total request cost cannot be defensibly known before execution |
 | Live provider smoke | Opt-in only | `liveProviderSmoke`; not run without explicit credentials/env gate |
