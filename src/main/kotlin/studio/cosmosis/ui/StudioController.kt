@@ -462,7 +462,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val outputIds=mutableListOf<String>();val outputPaths=mutableListOf<Path>()
         res.images.forEachIndexed{i,gi->
             val ext=when(gi.mime){"image/jpeg"->"jpg";"image/webp"->"webp";else->"png"}
-            val file=pp.generated.resolve(res.requestId+"-"+(i+1)+"."+ext);Files.write(file,gi.bytes);outputPaths+=file
+            val file=pp.generated.resolve(res.requestId+"-"+(i+1)+"."+ext);Files.write(file,gi.bytes);outputPaths.add(file)
             val im=ImageIO.read(file.toFile())
             val a=ImageAsset(kind=AssetKind.GENERATED,path=pp.root.relativize(file).toString(),mime=gi.mime,width=im?.width?:0,height=im?.height?:0,sha256=sha256(gi.bytes),sourceAssetId=parentAsset,provenance=res.provider+"/"+res.model)
             assets[a.id]=a;db!!.saveAsset(a);outputIds+=a.id
