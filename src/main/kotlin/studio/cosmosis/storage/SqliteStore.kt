@@ -29,7 +29,8 @@ class SqliteStore(path: Path) : AutoCloseable {
             "CREATE TABLE IF NOT EXISTS versions(id TEXT PRIMARY KEY,parent_id TEXT,asset_id TEXT NOT NULL,operation TEXT NOT NULL,name TEXT NOT NULL,prompt_id TEXT,generation_id TEXT,favorite INTEGER NOT NULL,created_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS generations(id TEXT PRIMARY KEY,parent_image_id TEXT,input_image_ids TEXT NOT NULL,mask_id TEXT,prompt_id TEXT,user_prompt TEXT NOT NULL,compiled_prompt TEXT NOT NULL,provider_id TEXT NOT NULL,model TEXT NOT NULL,endpoint TEXT NOT NULL,settings TEXT NOT NULL,output_image_ids TEXT NOT NULL,duration_ms INTEGER NOT NULL,retry_count INTEGER NOT NULL,worker_id TEXT NOT NULL,provider_revised_prompt TEXT,provider_context_id TEXT,error TEXT,created_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,type TEXT NOT NULL,state TEXT NOT NULL,payload TEXT NOT NULL,max_retries INTEGER NOT NULL,retry_count INTEGER NOT NULL,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS directives(id TEXT PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,enabled INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)"
         )
         ddl.forEach { sql -> conn.createStatement().use { it.execute(sql) } }
         ensureColumn("generations", "provider_context_id", "TEXT")
@@ -45,7 +46,7 @@ class SqliteStore(path: Path) : AutoCloseable {
         ensureColumn("prompts", "text_rendering_tags", "TEXT NOT NULL DEFAULT ''")
         ensureColumn("prompts", "variables", "TEXT NOT NULL DEFAULT ''")
         ensureColumn("prompts", "reference_image_hints", "TEXT NOT NULL DEFAULT ''")
-        conn.prepareStatement("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version','4')").use { it.executeUpdate() }
+        conn.prepareStatement("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version','5')").use { it.executeUpdate() }
     }
 
     fun loadProject(): ProjectRecord? = conn.createStatement().use { s ->
@@ -139,6 +140,22 @@ class SqliteStore(path: Path) : AutoCloseable {
     private fun ensureColumn(table:String,column:String,definition:String) {
         val exists=conn.createStatement().use { s -> s.executeQuery("PRAGMA table_info($table)").use { r -> generateSequence { if(r.next()) r.getString("name") else null }.any { it==column } } }
         if(!exists) conn.createStatement().use { it.execute("ALTER TABLE $table ADD COLUMN $column $definition") }
+    }
+
+    fun saveDirective(d: AgentDirective) {
+        conn.prepareStatement("INSERT OR REPLACE INTO directives(id,title,body,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?)").use { s ->
+            s.setString(1,d.id);s.setString(2,d.title);s.setString(3,d.body);s.setInt(4,if(d.enabled)1 else 0);s.setString(5,d.createdAt);s.setString(6,d.updatedAt);s.executeUpdate()
+        }
+    }
+    fun loadDirectives(): List<AgentDirective> {
+        val out=mutableListOf<AgentDirective>()
+        conn.createStatement().use { s -> s.executeQuery("SELECT * FROM directives ORDER BY title").use { r ->
+            while(r.next()) out += AgentDirective(r.getString("id"),r.getString("title"),r.getString("body"),r.getInt("enabled")!=0,r.getString("created_at"),r.getString("updated_at"))
+        }}
+        return out
+    }
+    fun deleteDirective(id:String) {
+        conn.prepareStatement("DELETE FROM directives WHERE id=?").use { it.setString(1,id);it.executeUpdate() }
     }
 
     fun putSetting(key:String,value:String) { conn.prepareStatement("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)").use { it.setString(1,key);it.setString(2,value);it.executeUpdate() } }
