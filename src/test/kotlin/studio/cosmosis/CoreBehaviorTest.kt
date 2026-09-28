@@ -24,7 +24,7 @@ class CoreBehaviorTest {
     @Test fun lineageBranchesWithoutFlattening(){
         val g=VersionGraph();g.add(VersionNode("v0",null,"a0",VersionOperation.IMPORT,"root"));g.add(VersionNode("v1","v0","a1",VersionOperation.EDIT,"one"));g.add(VersionNode("v2","v0","a2",VersionOperation.REMIX,"two"))
         assertEquals(setOf("v1","v2"),g.children("v0").map{it.id}.toSet());g.validateAcyclic()
-        val layout=VersionGraphLayout.compute(g.all());assertTrue(layout.nodes.any{it.id=="v1"&&it.depth==1});assertTrue(layout.nodes.any{it.id=="v2"&&it.depth==1})
+        val layout=VersionGraphLayout.layout(g.all());assertTrue(layout.nodes.any{it.id=="v1"&&it.depth==1});assertTrue(layout.nodes.any{it.id=="v2"&&it.depth==1})
     }
     @Test fun maskUndoRedoWorks(){val m=MaskDocument(32,32);m.apply(MaskStroke(16,16,16,16,5,false));assertTrue(m.coverage()>0);assertTrue(m.undo());assertEquals(0.0,m.coverage());assertTrue(m.redo())}
     @Test fun validatorRejectsUnsupportedMask(){val f=Files.createTempFile("mask",".png");val req=GenerationRequest(prompt="x",model="m",mask=ReferenceImage(f));assertFailsWith<CapabilityException>{CapabilityValidator.validate(req,ProviderCapabilities(textToImage=true),false)}}
