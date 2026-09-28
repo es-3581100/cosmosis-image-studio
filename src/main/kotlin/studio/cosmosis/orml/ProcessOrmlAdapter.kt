@@ -3,6 +3,7 @@ package studio.cosmosis.orml
 import studio.cosmosis.security.Redaction
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.LinkOption
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 
@@ -81,7 +82,7 @@ class ProcessOrmlAdapter(
             }
             val log=Redaction.sanitize(process.inputStream.bufferedReader().use{it.readText()}).replace(Regex("[\\r\\n]+")," ").take(500)
             if(process.exitValue()!=0)return OrmlResult(capabilityId,false,message="ORML runner exited "+process.exitValue()+if(log.isBlank())"" else ": "+log)
-            if(!Files.isRegularFile(output))return OrmlResult(capabilityId,false,message="ORML runner completed without required output file")
+            if(!Files.isRegularFile(output,LinkOption.NOFOLLOW_LINKS))return OrmlResult(capabilityId,false,message="ORML runner completed without required regular output file")
             if(Files.size(output)<=0)return OrmlResult(capabilityId,false,message="ORML runner completed with empty output file")
             when(capabilityId){
                 "smart-subject-mask","person-body-mask" -> {
