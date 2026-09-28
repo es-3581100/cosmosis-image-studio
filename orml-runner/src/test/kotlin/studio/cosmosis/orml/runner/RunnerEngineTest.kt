@@ -68,6 +68,24 @@ class RunnerEngineTest {
         assertFalse(rejected.ok);assertContains(rejected.message,"dimensions")
     }
 
+    @Test fun rejectsSymlinkOutputArtifact(){
+        if(System.getProperty("os.name").lowercase().contains("win"))return
+        val dir=Files.createTempDirectory("runner-symlink")
+        val input=dir.resolve("in.png");image(input)
+        val output=dir.resolve("mask.png")
+        val target=dir.resolve("elsewhere.png");image(target,32,24)
+        val backend=object:OrmlRunnerBackend{
+            override val backendId="symlink-mask"
+            override val capabilities=setOf("smart-subject-mask")
+            override fun run(request:RunnerRequest):RunnerResult{
+                Files.createSymbolicLink(request.output,target)
+                return RunnerResult(true,"claimed")
+            }
+        }
+        val result=RunnerEngine(listOf(backend)).execute(RunnerRequest("smart-subject-mask",input,output))
+        assertFalse(result.ok);assertContains(result.message,"regular output file")
+    }
+
     @Test fun embeddingBackendMustProduceJson(){
         val dir=Files.createTempDirectory("runner-json")
         val input=dir.resolve("in.png");image(input)
