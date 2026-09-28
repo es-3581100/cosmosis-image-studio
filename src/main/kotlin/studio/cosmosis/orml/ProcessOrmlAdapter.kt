@@ -4,6 +4,7 @@ import studio.cosmosis.security.Redaction
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import javax.imageio.ImageIO
 
 /**
  * Executes an explicitly configured local ORML runner without a shell.
@@ -62,8 +63,25 @@ class ProcessOrmlAdapter(
             }
             val log=Redaction.sanitize(process.inputStream.bufferedReader().use{it.readText()}).replace(Regex("[\\r\\n]+")," ").take(500)
             if(process.exitValue()!=0)return OrmlResult(capabilityId,false,message="ORML runner exited "+process.exitValue()+if(log.isBlank())"" else ": "+log)
-            if(descriptor.outputs.any{it=="image"||it.contains("mask",true)} && !Files.isRegularFile(output))
-                return OrmlResult(capabilityId,false,message="ORML runner completed without required output file")
+            if(!Files.isRegularFile(output))return OrmlResult(capabilityId,false,message="ORML runner completed without required output file")
+            if(Files.size(output)<=0)return OrmlResult(capabilityId,false,message="ORML runner completed with empty output file")
+            when(capabilityId){
+                "smart-subject-mask","person-body-mask" -> {
+                    val source=runCatching{ImageIO.read(input.toFile())}.getOrNull()
+                        ?:return OrmlResult(capabilityId,false,message="ORML mask input is not a decodable image")
+                    val maskImage=runCatching{ImageIO.read(output.toFile())}.getOrNull()
+                        ?:return OrmlResult(capabilityId,false,message="ORML mask output is not a decodable image")
+                    if(source.width!=maskImage.width||source.height!=maskImage.height)
+                        return OrmlResult(capabilityId,false,message="ORML mask output dimensions must match input")
+                }
+                "super-resolution" -> if(runCatching{ImageIO.read(output.toFile())}.getOrNull()==null)
+                    return OrmlResult(capabilityId,false,message="ORML super-resolution output is not a decodable image")
+                "image-embedding" -> {
+                    val body=runCatching{Files.readString(output)}.getOrNull()?.trim().orEmpty()
+                    if(!(body.startsWith("{")||body.startsWith("[")))
+                        return OrmlResult(capabilityId,false,message="ORML embedding output is not JSON")
+                }
+            }
             OrmlResult(
                 capabilityId,true,
                 outputPaths=if(Files.isRegularFile(output))listOf(output.toString())else emptyList(),
