@@ -10,7 +10,8 @@ Audit date: 2026-09-27. This is an engineering provenance record, not legal advi
 - **image-2-reverse-prompt — MIT.** Conceptual decomposition informed one original built-in prompt recipe; attribution retained.
 - **html-anything — MIT-0.** Conceptual inspiration only; no source copied.
 - **OPENRNDR — BSD-2-Clause.** Build dependency.
-- **ORML — BSD-2-Clause (published POM metadata).** No source is copied. The upstream `openrndr/orml` Gradle publication declares `BSD-2-Clause` and links the OPENRNDR license; Cosmosis keeps ORML behind an optional runtime boundary and records module/model provenance separately.
+- **ORML — BSD-2-Clause (published POM metadata).** No source is copied. The upstream `openrndr/orml` Gradle publication declares `BSD-2-Clause` and links the OPENRNDR license. The U2Net backend independently reproduces the documented preprocessing/graph contract from pinned upstream source metadata; it does not vendor upstream implementation source.
+- **TensorFlow Java — Apache-2.0.** The optional U2Net native distribution is lineage-pinned to TensorFlow Java 0.4.1 as used by the matching ORX `orx-tensorflow` commit. TensorFlow jars/natives are opt-in runtime dependencies, not core desktop dependencies.
 - **sqlite-jdbc — Apache-2.0.** Runtime dependency.
 - **kotlinx-coroutines — Apache-2.0.** Build/runtime dependency.
 
