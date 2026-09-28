@@ -1,0 +1,63 @@
+name: U2Net Native Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-u2net:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+
+      - name: Build pinned TensorFlow U2Net distribution
+        run: gradle --no-daemon :orml-runner-u2net:test :orml-runner-u2net:installDist -PcosmosisU2NetTensorFlow=true --stacktrace
+
+      - name: Fetch and verify pinned U2Net model
+        run: |
+          MODEL_PATH="$(bash scripts/fetch-u2net-model.sh "$RUNNER_TEMP/u2netp-320x320-float32-1.0.pb")"
+          echo "COSMOSIS_ORML_U2NET_MODEL=$MODEL_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate deterministic input image
+        run: |
+          python3 - <<'PY'
+          import struct, zlib
+          w=h=64
+          rows=[]
+          for y in range(h):
+              row=bytearray([0])
+              for x in range(w):
+                  row += bytes(((x*4) % 256, (y*4) % 256, 96))
+              rows.append(bytes(row))
+          raw=b"".join(rows)
+          def chunk(kind,data):
+              return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
+          png=b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",w,h,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw,9))+chunk(b"IEND",b"")
+          open("/tmp/cosmosis-u2net-input.png","wb").write(png)
+          PY
+
+      - name: Verify runner readiness and real model inference
+        run: |
+          RUNNER="orml-runner-u2net/build/install/orml-runner-u2net/bin/orml-runner-u2net"
+          test -x "$RUNNER"
+          "$RUNNER" --describe | tee /tmp/cosmosis-u2net-describe.json
+          grep -F '"id":"smart-subject-mask","available":true' /tmp/cosmosis-u2net-describe.json
+          "$RUNNER" --capability smart-subject-mask --input /tmp/cosmosis-u2net-input.png --output /tmp/cosmosis-u2net-mask.png
+          test -s /tmp/cosmosis-u2net-mask.png
+          echo "COSMOSIS_ORML_U2NET_RUNNER=$GITHUB_WORKSPACE/$RUNNER" >> "$GITHUB_ENV"
+
+      - name: Verify Cosmosis desktop admission and lineage path
+        env:
+          COSMOSIS_ORML_U2NET_RUNNER: ${{ env.COSMOSIS_ORML_U2NET_RUNNER }}
+          COSMOSIS_ORML_U2NET_MODEL: ${{ env.COSMOSIS_ORML_U2NET_MODEL }}
+        run: gradle --no-daemon acceptanceSmoke --stacktrace
