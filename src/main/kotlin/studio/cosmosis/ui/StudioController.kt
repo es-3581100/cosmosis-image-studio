@@ -307,8 +307,8 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
 
     fun ormlDiagnostics()=orml.diagnostics()
 
-    fun setWorkflowMode(mode:WorkflowMode){state.update{it.copy(workflowMode=mode,message="WORKFLOW / "+mode.name)}}
-    fun setMaskVisible(visible:Boolean){state.update{it.copy(maskVisible=visible,message="MASK OVERLAY / "+if(visible)"VISIBLE" else "HIDDEN")}}
+    fun setWorkflowMode(mode:WorkflowMode){db?.putSetting("workflow.mode",mode.name);state.update{it.copy(workflowMode=mode,message="WORKFLOW / "+mode.name)}}
+    fun setMaskVisible(visible:Boolean){db?.putSetting("appearance.maskVisible",visible.toString());state.update{it.copy(maskVisible=visible,message="MASK OVERLAY / "+if(visible)"VISIBLE" else "HIDDEN")}}
     fun setMaskOverlayStyle(hex:String,opacity:Double){
         val normalized=normalizeHexColor(hex);val alpha=opacity.coerceIn(.05,1.0)
         db?.putSetting("appearance.maskOverlayColor",normalized);db?.putSetting("appearance.maskOverlayOpacity",alpha.toString())
@@ -497,10 +497,49 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         seeds.filter{it.id !in existing}.forEach{seed->prompts=PromptLibrary(prompts.all(true)+seed,prompts.all(true).flatMap{prompts.revisions(it.id)})}
     }
 
+    private fun activeReferenceAssets():List<ImageAsset> = activeReferenceIds.mapNotNull{assets[it]}.filter{it.kind==AssetKind.REFERENCE}
+
+    private fun persistReferenceSelection(){db?.putSetting("references.activeIds",activeReferenceIds.joinToString(","))}
+    private fun syncReferences(message:String){
+        val pp=paths
+        state.update{it.copy(referencePaths=if(pp==null)emptyList() else activeReferenceAssets().map{x->pp.root.resolve(x.path).toString()},message=message)}
+    }
+
+    private fun restoreProjectSettings(){
+        val store=db?:return
+        activeReferenceIds.clear()
+        store.getSetting("references.activeIds").orEmpty().split(',').map{it.trim()}.filter{it.isNotBlank()&&assets[it]?.kind==AssetKind.REFERENCE}.forEach(activeReferenceIds::add)
+        val color=runCatching{normalizeHexColor(store.getSetting("appearance.maskOverlayColor")?:"#EF4444")}.getOrDefault("#EF4444")
+        val opacity=store.getSetting("appearance.maskOverlayOpacity")?.toDoubleOrNull()?.coerceIn(.05,1.0)?:.42
+        val reduced=store.getSetting("appearance.reducedMotion")?.toBooleanStrictOrNull()?:false
+        val motion=store.getSetting("appearance.motionLevel")?.takeIf{it in setOf("off","subtle","normal")}?: "normal"
+        val density=store.getSetting("appearance.uiDensity")?.takeIf{it in setOf("compact","comfortable","spacious")}?: "comfortable"
+        val visible=store.getSetting("appearance.maskVisible")?.toBooleanStrictOrNull()?:true
+        val workflow=store.getSetting("workflow.mode")?.let{runCatching{WorkflowMode.valueOf(it)}.getOrNull()}?:WorkflowMode.QUICK_GENERATE
+        state.update{it.copy(maskOverlayColor=color,maskOverlayOpacity=opacity,reducedMotion=reduced,motionLevel=motion,uiDensity=density,maskVisible=visible,workflowMode=workflow)}
+    }
+
+    private fun renderMaskOverlay(maskPath:Path,colorHex:String=state.get().maskOverlayColor,opacity:Double=state.get().maskOverlayOpacity):Path{
+        val pp=requireNotNull(paths);val src=requireNotNull(ImageIO.read(maskPath.toFile())){"Unreadable mask: "+maskPath}
+        val color=Color.decode(normalizeHexColor(colorHex));val alphaScale=opacity.coerceIn(.05,1.0)
+        val rgba=BufferedImage(src.width,src.height,BufferedImage.TYPE_INT_ARGB)
+        for(y in 0 until src.height)for(x in 0 until src.width){
+            val m=src.raster.getSample(x,y,0).coerceIn(0,255)
+            val a=(m*alphaScale).toInt().coerceIn(0,255)
+            rgba.setRGB(x,y,(a shl 24) or (color.red shl 16) or (color.green shl 8) or color.blue)
+        }
+        val out=pp.previews.resolve("mask-overlay-"+System.currentTimeMillis()+".png");ImageIO.write(rgba,"png",out.toFile());return out
+    }
+
+    private fun normalizeHexColor(value:String):String{
+        val raw=value.trim().removePrefix("#");require(Regex("[0-9A-Fa-f]{6}").matches(raw)){"Mask overlay color must be #RRGGBB"}
+        return "#"+raw.uppercase()
+    }
+
     private fun currentVersionId()=project?.currentVersionId
     private fun assetForCurrent():ImageAsset?=currentVersionId()?.let(graph::get)?.let{assets[it.assetId]}
-    private fun sync(message:String){state.update{it.copy(projectName=project?.name?:"NO PROJECT",projectRoot=project?.root?:"",currentVersion=project?.currentVersionId?:"V---",versions=graph.all(),jobs=engine?.snapshot().orEmpty(),message=message)}}
-    private fun closeProject(){engine?.close();db?.close();engine=null;db=null;project=null;paths=null;assets.clear();generations.clear();currentMaskId=null;prompts=PromptLibrary();graph=VersionGraph()}
+    private fun sync(message:String){val pp=paths;state.update{it.copy(projectName=project?.name?:"NO PROJECT",projectRoot=project?.root?:"",currentVersion=project?.currentVersionId?:"V---",versions=graph.all(),jobs=engine?.snapshot().orEmpty(),referencePaths=if(pp==null)emptyList() else activeReferenceAssets().map{x->pp.root.resolve(x.path).toString()},message=message)}}
+    private fun closeProject(){engine?.close();db?.close();engine=null;db=null;project=null;paths=null;assets.clear();generations.clear();directives.clear();activeReferenceIds.clear();currentMaskId=null;prompts=PromptLibrary();graph=VersionGraph()}
     override fun close(){closeProject()}
     private fun readProjectJson(p:Path):Map<String,String>{if(!Files.exists(p))return emptyMap();val t=Files.readString(p);return Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"").findAll(t).associate{it.groupValues[1] to it.groupValues[2]}}
     private fun sha256(bytes:ByteArray)=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
