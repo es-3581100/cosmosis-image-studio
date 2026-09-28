@@ -9,6 +9,8 @@ import studio.cosmosis.orml.*
 import studio.cosmosis.prompt.*
 import studio.cosmosis.provider.*
 import studio.cosmosis.security.Redaction
+import studio.cosmosis.storage.SqliteStore
+import studio.cosmosis.workers.JobEngine
 import java.nio.file.Files
 
 class CoreBehaviorTest {
@@ -66,6 +68,45 @@ class CoreBehaviorTest {
         assertNotEquals("READY",executor.status("smart-subject-mask"))
         assertTrue(executor.diagnostics().errors.any{it.contains("ambiguous")})
     }
+    @Test fun failedJobCanBeExplicitlyResumedFromPersistedRequest(){
+        val dbPath=Files.createTempFile("cosmosis-resume",".db")
+        SqliteStore(dbPath).use{store->
+            store.migrate()
+            var fail=true
+            val caps=ProviderCapabilities(textToImage=true,outputFormats=setOf("png"),maxReferenceImages=0)
+            val fake=object:ImageProvider{
+                override val id="resume-fake"
+                override fun capabilities(model:String)=caps
+                override fun models()=listOf(ModelDefinition(id,"m","resume fake",caps))
+                override fun generate(request:GenerationRequest):GenerationResult{
+                    if(fail)error("planned failure")
+                    return GenerationResult(request.id,id,request.model,listOf(GeneratedImage(byteArrayOf(1),"image/png")),1)
+                }
+                override fun edit(request:GenerationRequest)=generate(request)
+                override fun testConnection()=ConnectionStatus(true,"ok",0)
+            }
+            JobEngine(ProviderRegistry().register(fake),store,1).use{engine->
+                val request=GenerationRequest(prompt="persist me",model="m")
+                val job=engine.submit(fake.id,request,false,JobBudget(maxGenerations=1,maxRetries=0,timeoutSeconds=5))
+                waitForJob(engine,job.id,JobState.FAILED)
+                assertTrue(engine.canResume(job.id))
+                assertEquals("persist me",engine.request(job.id)?.prompt)
+                fail=false
+                engine.resume(job.id)
+                waitForJob(engine,job.id,JobState.COMPLETE)
+                assertFalse(engine.canResume(job.id))
+            }
+        }
+    }
+
     @Test fun modelRegistryMigrates(){val r=ModelRegistry.parse("""{"schemaVersion":0,"models":[]}""").migrate();assertEquals(ModelRegistry.CURRENT_SCHEMA,r.schemaVersion)}
-    @Test fun agentIndexFindsNaturalLanguageIntent(){val d=Files.createTempDirectory("docs");Files.writeString(d.resolve("x.html"),"""<section id="s"></section><script id="agent-index" type="application/json">{"capability":"smart-subject-mask","module":"x","intents":["remove-background"],"aliases":["cutout"]}</script>""");val idx=AgentIndex(d);idx.rebuild();assertTrue(idx.lookup("remove background").isNotEmpty())}
+    @Test fun agentIndexFindsNaturalLanguageIntent(){val d=Files.createTempDirectory("docs");Files.writeString(d.resolve("x.html"),"""<section id="s"></section><script id="agent-index" type="application/json">{"capability":"smart-subject-mask","module":"x","intents":["remove-background"],"aliases":["cutout"]}</script>""");val idx=AgentIndex(d);idx.rebuild();assertTrue(idx.lookup("remove background").isNotEmpty())}    private fun waitForJob(engine:JobEngine,id:String,state:JobState,timeoutMs:Long=5_000){
+        val deadline=System.currentTimeMillis()+timeoutMs
+        while(System.currentTimeMillis()<deadline){
+            if(engine.snapshot().firstOrNull{it.id==id}?.state==state)return
+            Thread.sleep(10)
+        }
+        fail("Timed out waiting for job $id -> $state; actual="+engine.snapshot().firstOrNull{it.id==id}?.state)
+    }
+
 }
