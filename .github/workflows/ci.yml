@@ -37,6 +37,8 @@ jobs:
           "$RUNNER" --describe | grep -F '"protocolVersion":"1"'
           "$RUNNER" --self-test > /tmp/cosmosis-orml-runner-self-test.json
           grep -F '"smart-subject-mask"' /tmp/cosmosis-orml-runner-self-test.json
+      - name: U2Net helper script syntax
+        run: bash -n scripts/fetch-u2net-model.sh scripts/u2net-native-smoke.sh
       - name: U2Net backend distribution smoke
         run: |
           RUNNER="orml-runner-u2net/build/install/orml-runner-u2net/bin/orml-runner-u2net"
