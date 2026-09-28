@@ -99,6 +99,20 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         state.update{it.copy(imagePath=pp.root.resolve(a.path).toString(),imageWidth=a.width,imageHeight=a.height,currentVersion=v.id,versions=graph.all(),message="IMPORTED / ${a.width}×${a.height}")}
     }
 
+    fun addReferenceImage(source:Path):ImageAsset{
+        val pp=requireNotNull(paths){"Create/open a project first"}
+        val a=ProjectStore.importReferenceImage(pp,source);assets[a.id]=a;db!!.saveAsset(a)
+        activeReferenceIds+=a.id;persistReferenceSelection()
+        state.update{it.copy(referencePaths=activeReferenceAssets().map{x->pp.root.resolve(x.path).toString()},message="REFERENCE ADDED / "+a.id)}
+        return a
+    }
+
+    fun removeReferenceImage(id:String){
+        if(activeReferenceIds.remove(id)){persistReferenceSelection();syncReferences("REFERENCE REMOVED")}
+    }
+    fun clearReferenceImages(){activeReferenceIds.clear();persistReferenceSelection();syncReferences("REFERENCES CLEARED")}
+    fun referenceImages():List<ImageAsset> = activeReferenceAssets()
+
     fun importClipboardImage(){
         val pp=requireNotNull(paths){"Create/open a project first"}
         val clip=Toolkit.getDefaultToolkit().systemClipboard
@@ -130,6 +144,19 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         state.update{it.copy(promptTitle=p.title,promptBody=p.body,message="PROMPT SAVED / ${p.id}")}
         return p
     }
+
+    fun allDirectives():List<AgentDirective> = directives.sortedBy{it.title.lowercase()}
+    fun saveDirective(title:String,body:String,enabled:Boolean=true):AgentDirective{
+        require(title.isNotBlank()){"Directive title is required"};require(body.isNotBlank()){"Directive body is required"}
+        val d=AgentDirective(title=title.trim(),body=body.trim(),enabled=enabled);directives+=d;db!!.saveDirective(d);sync("DIRECTIVE SAVED / "+d.id);return d
+    }
+    fun updateDirective(id:String,title:String,body:String,enabled:Boolean):AgentDirective{
+        val d=requireNotNull(directives.firstOrNull{it.id==id}){"Unknown directive '$id'"}
+        require(title.isNotBlank()){"Directive title is required"};require(body.isNotBlank()){"Directive body is required"}
+        d.title=title.trim();d.body=body.trim();d.enabled=enabled;d.updatedAt=nowIso();db!!.saveDirective(d);sync("DIRECTIVE UPDATED / "+d.id);return d
+    }
+    fun deleteDirective(id:String){directives.removeIf{it.id==id};db!!.deleteDirective(id);sync("DIRECTIVE DELETED / "+id)}
+    fun enabledDirectives():List<AgentDirective> = directives.filter{it.enabled}
 
     fun promptSearch(q:String)=prompts.search(q)
     fun allPrompts()=prompts.all()
