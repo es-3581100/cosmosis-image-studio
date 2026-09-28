@@ -34,11 +34,28 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private val promptFavorite=JCheckBox("★ FAVORITE").apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
     private val provider=JComboBox(arrayOf("local","openai","gemini","litellm","custom"))
     private val model=JComboBox<String>().apply{isEditable=true}
+    private val workflowMode=JComboBox(WorkflowMode.entries.toTypedArray())
+    private val outputFormat=JComboBox(arrayOf("png","jpeg","webp"))
+    private val outputWidth=JTextField("")
+    private val outputHeight=JTextField("")
     private val status=JLabel("READY")
     private val localTree=JTree(DefaultMutableTreeNode("MY PROMPTS"))
     private val premadeTree=JTree(DefaultMutableTreeNode("PREMADE PROMPTS"))
     private val versionList=JList<VersionRef>()
     private val workers=JTextArea()
+    private val workerList=JList<JobRef>()
+    private val referenceList=JList<ReferenceRef>()
+    private val directiveList=JList<DirectiveRef>()
+    private val directiveTitle=JTextField()
+    private val directiveBody=JTextArea(14,30).apply{lineWrap=true;wrapStyleWord=true}
+    private val directiveEnabled=JCheckBox("ENABLED").apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
+    private var selectedDirectiveId:String?=null
+    private val maskVisible=JCheckBox("MASK OVERLAY VISIBLE",true).apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
+    private val maskColor=JTextField("#EF4444")
+    private val maskOpacity=JSpinner(SpinnerNumberModel(42,5,100,1))
+    private val motionLevel=JComboBox(arrayOf("off","subtle","normal"))
+    private val uiDensity=JComboBox(arrayOf("compact","comfortable","spacious"))
+    private val reducedMotion=JCheckBox("REDUCED MOTION").apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
     private val undo=UndoManager()
     private val searchScope=JComboBox(arrayOf("ALL","MY PROMPTS","PREMADE PROMPTS"))
     private val capabilityLabel=JTextArea(5,36).apply{isEditable=false;lineWrap=true;wrapStyleWord=true}
@@ -57,14 +74,18 @@ class ControlDock(private val controller:StudioController,private val state:Stud
 
     init {
         applyTheme();defaultCloseOperation=DO_NOTHING_ON_CLOSE;layout=BorderLayout();minimumSize=Dimension(720,780);preferredSize=Dimension(880,920)
-        val tabs=JTabbedPane();tabs.addTab("PROMPT",promptPanel());tabs.addTab("LIBRARY",libraryPanel());tabs.addTab("VERSIONS",versionPanel());tabs.addTab("WORKERS",workerPanel());tabs.addTab("SETTINGS",settingsPanel());add(tabs,BorderLayout.CENTER);add(status,BorderLayout.SOUTH);status.border=BorderFactory.createEmptyBorder(8,13,8,13)
+        val tabs=JTabbedPane();tabs.addTab("PROMPT",promptPanel());tabs.addTab("LIBRARY",libraryPanel());tabs.addTab("REFERENCES",referencePanel());tabs.addTab("VERSIONS",versionPanel());tabs.addTab("WORKERS",workerPanel());tabs.addTab("DIRECTIVES",directivePanel());tabs.addTab("SETTINGS",settingsPanel());add(tabs,BorderLayout.CENTER);add(status,BorderLayout.SOUTH);status.border=BorderFactory.createEmptyBorder(8,13,8,13)
         prompt.document.addUndoableEditListener(UndoableEditListener{e:UndoableEditEvent->undo.addEdit(e.edit)})
         prompt.document.addDocumentListener(object:DocumentListener{override fun insertUpdate(e:DocumentEvent)=mark();override fun removeUpdate(e:DocumentEvent)=mark();override fun changedUpdate(e:DocumentEvent)=mark();fun mark(){dirty=true;status.text="UNSAVED PROMPT"}})
-        provider.addActionListener{refreshModels()};refreshModels()
+        provider.addActionListener{refreshModels()};workflowMode.addActionListener{(workflowMode.selectedItem as? WorkflowMode)?.let(controller::setWorkflowMode)};refreshModels()
         state.listen { s -> SwingUtilities.invokeLater {
             status.text=s.message;workers.text=s.jobs.joinToString("\n"){"${it.id.take(12)}  ${it.state}  ${it.type}  retry=${it.retryCount}"}
+            workerList.setListData(s.jobs.map{JobRef(it.id,it.id.take(12)+" / "+it.state+" / "+it.type+" / retry="+it.retryCount)}.toTypedArray())
             if(!prompt.hasFocus() && !dirty && s.promptBody.isNotBlank()){prompt.text=s.promptBody;promptTitle.text=s.promptTitle}
-            refreshTrees();refreshVersions()
+            if(workflowMode.selectedItem!=s.workflowMode)workflowMode.selectedItem=s.workflowMode
+            maskVisible.isSelected=s.maskVisible;maskColor.text=s.maskOverlayColor;maskOpacity.value=(s.maskOverlayOpacity*100).toInt()
+            reducedMotion.isSelected=s.reducedMotion;motionLevel.selectedItem=s.motionLevel;uiDensity.selectedItem=s.uiDensity
+            refreshTrees();refreshReferences();refreshVersions();refreshDirectives()
         } }
         installKeys();pack();setLocation(30,70);isVisible=true
     }
