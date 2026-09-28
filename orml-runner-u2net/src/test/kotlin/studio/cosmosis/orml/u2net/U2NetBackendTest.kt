@@ -39,6 +39,24 @@ class U2NetBackendTest {
         assertEquals(U2NetModelPin.modelSha256,result.metadata["modelSha256"])
     }
 
+    @Test fun preprocessingMatchesUpstreamScaleAndOffset(){
+        val red=BufferedImage(1,1,BufferedImage.TYPE_INT_RGB)
+        red.setRGB(0,0,0x00ff0000)
+        val values=normalizeU2NetInput(red)
+        assertEquals(U2NetModelPin.width*U2NetModelPin.height*3,values.size)
+        assertEquals(1.0f,values[0],0.0001f)
+        assertEquals(-1.0f,values[1],0.0001f)
+        assertEquals(-1.0f,values[2],0.0001f)
+    }
+
+    @Test fun matteConversionPreservesRequestedOutputDimensions(){
+        val matte=FloatArray(U2NetModelPin.width*U2NetModelPin.height){1.0f}
+        val mask=u2NetMaskImage(matte,19,13)
+        assertEquals(19,mask.width)
+        assertEquals(13,mask.height)
+        assertTrue(mask.raster.getSample(0,0,0)>=250)
+    }
+
     @Test fun pinnedModelHashIsEnforced(){
         val model=Files.createTempFile("fake-u2net",".pb")
         Files.writeString(model,"not-the-pinned-model")
