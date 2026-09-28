@@ -292,24 +292,54 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     }
     fun smartSaliencyMask():Path {
         val input=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
-        if(orml.status("smart-subject-mask")=="READY"){
-            val pp=requireNotNull(paths)
-            val result=orml.invoke(
-                OrmlInvocation(
-                    capabilityId="smart-subject-mask",
-                    inputPath=input.toString(),
-                    options=mapOf("outputDir" to pp.masks.toString(),"outputFormat" to "png")
-                )
-            )
-            require(result.ok){result.message}
-            val output=result.outputPaths.firstOrNull() ?: error("ORML subject-mask adapter returned no output")
-            val image=ImageIO.read(Path.of(output).toFile()) ?: error("ORML subject-mask adapter returned an unreadable image")
-            return persistMask(MaskDocument.fromBufferedImage(image),"orml-u2net")
+        return if(state.get().ormlEnabled&&orml.status("smart-subject-mask")=="READY")
+            invokeOrmlMask("smart-subject-mask","orml-u2net")
+        else persistMask(SmartMask.saliency(input),"smart-saliency-fallback")
+    }
+
+    fun ormlPersonMask():Path {
+        require(state.get().ormlEnabled){"ORML is disabled for this project"}
+        require(orml.status("person-body-mask")=="READY"){"BodyPix ORML runtime is not READY"}
+        return invokeOrmlMask("person-body-mask","orml-bodypix")
+    }
+
+    fun ormlSuperResolution():Path {
+        require(state.get().ormlEnabled){"ORML is disabled for this project"}
+        require(orml.status("super-resolution")=="READY"){"Super-resolution ORML runtime is not READY"}
+        val pp=requireNotNull(paths);val input=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
+        val result=orml.invoke(OrmlInvocation("super-resolution",input.toString(),mapOf("outputDir" to pp.generated.toString(),"outputFormat" to "png")))
+        require(result.ok){result.message}
+        val output=result.outputPaths.firstOrNull()?:error("ORML super-resolution runner returned no image")
+        val image=ImageIO.read(Path.of(output).toFile())?:error("ORML super-resolution runner returned an unreadable image")
+        return persistDerived(image,VersionOperation.UPSCALE,"orml-super-resolution")
+    }
+
+    fun ormlImageEmbedding():Path {
+        require(state.get().ormlEnabled){"ORML is disabled for this project"}
+        require(orml.status("image-embedding")=="READY"){"Image-classifier ORML runtime is not READY"}
+        val pp=requireNotNull(paths);val input=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
+        val result=orml.invoke(OrmlInvocation("image-embedding",input.toString(),mapOf("outputDir" to pp.metadata.toString(),"outputFormat" to "json")))
+        require(result.ok){result.message}
+        val out=result.outputPaths.firstOrNull()?.let(Path::of)?:pp.metadata.resolve("orml-image-embedding-"+System.currentTimeMillis()+".json").also{path->
+            val fields=result.metadata.entries.associate{it.key to JsonUtil.quote(it.value)}
+            Files.writeString(path,JsonUtil.obj(*fields.map{it.key to it.value}.toTypedArray()))
         }
-        return persistMask(SmartMask.saliency(input),"smart-saliency-fallback")
+        state.update{it.copy(message="ORML EMBEDDING / "+out.fileName)}
+        return out
     }
 
     fun ormlDiagnostics()=orml.diagnostics()
+    fun ormlStatus(capabilityId:String)=if(state.get().ormlEnabled)orml.status(capabilityId) else "DISABLED"
+    fun setOrmlEnabled(enabled:Boolean){db?.putSetting("orml.enabled",enabled.toString());state.update{it.copy(ormlEnabled=enabled,message="ORML / "+if(enabled)"ENABLED" else "DISABLED")}}
+
+    private fun invokeOrmlMask(capabilityId:String,method:String):Path {
+        val pp=requireNotNull(paths);val input=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
+        val result=orml.invoke(OrmlInvocation(capabilityId,input.toString(),mapOf("outputDir" to pp.masks.toString(),"outputFormat" to "png")))
+        require(result.ok){result.message}
+        val output=result.outputPaths.firstOrNull()?:error("ORML mask runner returned no output")
+        val image=ImageIO.read(Path.of(output).toFile())?:error("ORML mask runner returned an unreadable image")
+        return persistMask(MaskDocument.fromBufferedImage(image),method)
+    }
 
     fun setWorkflowMode(mode:WorkflowMode){val tool=when(mode){WorkflowMode.MASK_EDIT->"MASK";WorkflowMode.IMAGE_TO_PROMPT->"AI";WorkflowMode.UPSCALE->"FIT";WorkflowMode.EDIT_EXISTING,WorkflowMode.BACKGROUND_REPLACE,WorkflowMode.SUBJECT_PRESERVE,WorkflowMode.STYLE_TRANSFER,WorkflowMode.REFERENCE_REMIX->"EDIT";else->"AI"};db?.putSetting("workflow.mode",mode.name);state.update{it.copy(workflowMode=mode,selectedTool=tool,message="WORKFLOW / "+mode.name)}}
     fun setMaskVisible(visible:Boolean){db?.putSetting("appearance.maskVisible",visible.toString());state.update{it.copy(maskVisible=visible,message="MASK OVERLAY / "+if(visible)"VISIBLE" else "HIDDEN")}}
@@ -657,7 +687,8 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val density=store.getSetting("appearance.uiDensity")?.takeIf{it in setOf("compact","comfortable","spacious")}?: "comfortable"
         val visible=store.getSetting("appearance.maskVisible")?.toBooleanStrictOrNull()?:true
         val workflow=store.getSetting("workflow.mode")?.let{runCatching{WorkflowMode.valueOf(it)}.getOrNull()}?:WorkflowMode.QUICK_GENERATE
-        state.update{it.copy(maskOverlayColor=color,maskOverlayOpacity=opacity,reducedMotion=reduced,motionLevel=motion,uiDensity=density,maskVisible=visible,workflowMode=workflow)}
+        val ormlEnabled=store.getSetting("orml.enabled")?.toBooleanStrictOrNull()?:true
+        state.update{it.copy(maskOverlayColor=color,maskOverlayOpacity=opacity,reducedMotion=reduced,motionLevel=motion,uiDensity=density,maskVisible=visible,workflowMode=workflow,ormlEnabled=ormlEnabled)}
     }
 
     private fun renderMaskOverlay(maskPath:Path,colorHex:String=state.get().maskOverlayColor,opacity:Double=state.get().maskOverlayOpacity):Path{
