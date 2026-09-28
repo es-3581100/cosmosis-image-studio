@@ -28,7 +28,7 @@ The sigmoid matte is converted to an 8-bit grayscale PNG and resized back to the
 
 ## Runtime prerequisites
 
-The backend is dependency-light at compile time. A compatible TensorFlow Java runtime must be placed on this distribution's runtime classpath.
+The backend is dependency-light at compile time. The matched upstream ORX lineage uses TensorFlow Java **0.4.1**. Build an opt-in native distribution with `-PcosmosisU2NetTensorFlow=true`; this adds `org.tensorflow:tensorflow-core-api:0.4.1` plus the matching x86_64 native classifier for Linux, macOS, or Windows.
 
 Readiness also requires:
 
@@ -43,9 +43,10 @@ export COSMOSIS_ORML_U2NET_MODEL=/absolute/path/u2netp-320x320-float32-1.0.pb
 ```bash
 ./gradlew :orml-runner-u2net:test
 ./gradlew :orml-runner-u2net:installDist
+./gradlew :orml-runner-u2net:installDist -PcosmosisU2NetTensorFlow=true
 ```
 
-Without TensorFlow/model installation the generated runner is expected to report `smart-subject-mask` as unavailable and include a sanitized discovery error.
+Without the model/native runtime the generated runner is expected to report `smart-subject-mask` as unavailable and include a sanitized discovery error. Ordinary CI verifies that fail-closed state; the native runtime is not silently bundled into the desktop application.
 
 ## Native verification
 
@@ -54,7 +55,7 @@ A native smoke is intentionally separate from ordinary offline CI.
 After installing a compatible TensorFlow runtime into the distribution classpath and setting `COSMOSIS_ORML_U2NET_MODEL`:
 
 ```bash
-COSMOSIS_U2NET_NATIVE_TESTS=1 ./scripts/u2net-native-smoke.sh input.png
+COSMOSIS_U2NET_NATIVE_TESTS=1 bash scripts/u2net-native-smoke.sh input.png
 ```
 
 Do not mark native U2Net as verified until that smoke produces a same-size PNG mask and the desktop accepts it through the normal ORML process-admission path.
