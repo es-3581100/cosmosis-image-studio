@@ -42,8 +42,9 @@ class CoreBehaviorTest {
     @Test fun ormlAdapterRequiresConcreteOutput(){
         val input=Files.createTempFile("orml-input",".png")
         val output=Files.createTempFile("orml-output",".png")
+        val capabilityId="smart-subject-mask"
         val adapter=object:OrmlAdapter{
-            override val capabilityId="smart-subject-mask"
+            override val capabilityId=capabilityId
             override fun invoke(request:OrmlInvocation)=OrmlResult(capabilityId,true,listOf(output.toString()),message="ok")
         }
         val executor=OrmlExecutor(listOf(adapter))
