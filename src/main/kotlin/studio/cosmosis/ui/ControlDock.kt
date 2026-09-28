@@ -193,6 +193,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             "PASTE IMAGE" to {runCatching{controller.importClipboardImage()}.onFailure(::showError)},
             "MASK EDITOR" to {openMask()},
             "SMART SUBJECT MASK" to {runCatching{controller.smartSaliencyMask()}.onFailure(::showError)},
+            "TOGGLE ANALYSIS OVERLAY" to {controller.setAnalysisVisible(!state.get().analysisVisible)},
             "ROTATE 90°" to {runCatching{controller.rotateCurrent(true)}.onFailure(::showError)},
             "FLIP HORIZONTAL" to {runCatching{controller.flipCurrent(true)}.onFailure(::showError)},
             "CROP…" to {cropDialog()},
@@ -226,6 +227,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             CommandRef("ACTIONS / Agent Build"){runAgentBuildDialog()},
             CommandRef("ACTIONS / Fit image"){controller.resetView()},
             CommandRef("MASK / Toggle overlay"){controller.setMaskVisible(!state.get().maskVisible)},
+            CommandRef("ANALYSIS / Toggle overlay"){controller.setAnalysisVisible(!state.get().analysisVisible)},
             CommandRef("DOCUMENTATION / Hyper Index"){val p=Path.of("docs/AGENT_USER_README.html").toAbsolutePath();if(Files.exists(p))Desktop.getDesktop().browse(p.toUri())}
         )
         WorkflowMode.entries.forEach{mode->base+=CommandRef("WORKFLOW / "+mode.name.replace('_',' ')){workflowMode.selectedItem=mode;controller.setWorkflowMode(mode)}}
