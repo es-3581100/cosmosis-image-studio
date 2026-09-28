@@ -21,6 +21,8 @@ import studio.cosmosis.storage.SqliteStore
 import studio.cosmosis.workers.Director
 import studio.cosmosis.workers.ImageCritic
 import studio.cosmosis.workers.JobEngine
+import java.awt.Color
+import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.geom.AffineTransform
@@ -39,6 +41,8 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     private var graph=VersionGraph()
     private val assets=linkedMapOf<String,ImageAsset>()
     private val generations=mutableListOf<GenerationRecord>()
+    private val directives=mutableListOf<AgentDirective>()
+    private val activeReferenceIds=linkedSetOf<String>()
     private var currentMaskId:String?=null
 
     val providers=ProviderRegistry.default()
@@ -52,7 +56,9 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         db=SqliteStore(pp.db).also{it.migrate();it.recoverInterruptedJobs()}
         prompts=PromptLibrary(db!!.loadPrompts(),db!!.loadPromptRevisions())
         graph=VersionGraph(db!!.loadVersions())
+        directives.clear();directives+=db!!.loadDirectives()
         engine=JobEngine(providers,db!!,2)
+        restoreProjectSettings()
         seedPremade();agentIndex.rebuild();sync("PROJECT CREATED")
     }
 
@@ -67,10 +73,20 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         graph=VersionGraph(db!!.loadVersions())
         db!!.loadAssets().forEach{assets[it.id]=it}
         generations+=db!!.loadGenerations()
+        directives.clear();directives+=db!!.loadDirectives()
         engine=JobEngine(providers,db!!,2)
+        restoreProjectSettings()
         seedPremade();agentIndex.rebuild()
         val a=assetForCurrent()
-        state.update{it.copy(imagePath=a?.let{pp.root.resolve(it.path).toString()},imageWidth=a?.width?:0,imageHeight=a?.height?:0)}
+        val latestMask=db!!.loadMasks().lastOrNull{it.sourceAssetId==a?.id}
+        currentMaskId=latestMask?.id
+        val maskPath=latestMask?.let{pp.root.resolve(it.path)}
+        val overlay=maskPath?.takeIf(Files::isRegularFile)?.let{renderMaskOverlay(it)}
+        state.update{it.copy(
+            imagePath=a?.let{pp.root.resolve(it.path).toString()},imageWidth=a?.width?:0,imageHeight=a?.height?:0,
+            maskPath=maskPath?.toString(),maskOverlayPath=overlay?.toString(),
+            referencePaths=activeReferenceAssets().map{pp.root.resolve(it.path).toString()}
+        )}
         sync("PROJECT OPEN / INTERRUPTED JOBS PRESERVED")
     }
 
