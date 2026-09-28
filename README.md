@@ -46,7 +46,19 @@ Cosmosis keeps ORML model runtimes outside the core dependency graph. Optional l
 META-INF/services/studio.cosmosis.orml.OrmlAdapter
 ```
 
-An adapter is reported `READY` only when it is actually present on the runtime classpath. Duplicate providers for one capability are rejected. File-producing adapters must return concrete files that exist before Cosmosis accepts the result. Without an adapter, the existing deterministic local saliency mask remains available; Cosmosis does not claim that fallback is ORML inference.
+An in-process adapter is reported `READY` only when it is actually present on the runtime classpath. Duplicate providers for one capability are rejected. File-producing adapters must return concrete files that exist before Cosmosis accepts the result.
+
+For isolated native runtimes, this repository now includes the separate `orml-runner` application:
+
+```bash
+./gradlew :orml-runner:test
+./gradlew :orml-runner:installDist
+orml-runner/build/install/orml-runner/bin/orml-runner --describe
+```
+
+A configured executable is not considered `READY` merely because the file exists. Cosmosis runs the protocol-v1 `--describe` handshake and requires that the exact requested capability report `available: true`. The runner then independently validates mask/image/JSON output artifacts, and the desktop boundary validates them again after execution.
+
+Without an admitted adapter/backend, the existing deterministic local saliency mask remains available; Cosmosis does not claim that fallback is ORML inference.
 
 ## Offline verification
 
