@@ -31,9 +31,22 @@ class CoreBehaviorTest {
     @Test fun maskUndoRedoWorks(){val m=MaskDocument(32,32);m.apply(MaskStroke(16,16,16,16,5,false));assertTrue(m.coverage()>0);assertTrue(m.undo());assertEquals(0.0,m.coverage());assertTrue(m.redo())}
     @Test fun validatorRejectsUnsupportedMask(){val f=Files.createTempFile("mask",".png");val req=GenerationRequest(prompt="x",model="m",mask=ReferenceImage(f));assertFailsWith<CapabilityException>{CapabilityValidator.validate(req,ProviderCapabilities(textToImage=true),false)}}
     @Test fun wireFormatsAreProviderSpecific(){
-        val o=OpenAiWire.generationBody(GenerationRequest(prompt="x",model="gpt-image-2.5-flare",quality="high"));assertContains(o,"output_format")
+        val openAiRequest=GenerationRequest(prompt="x",model="gpt-image-2.5-flare",quality="high",width=1024,height=1024,outputFormat="webp",metadata=mapOf("compression" to "70"))
+        val o=OpenAiWire.generationBody(openAiRequest);assertContains(o,"output_format");assertContains(o,"1024x1024");assertContains(o,"70")
+        val rt=OpenAiWire.responsesImageTool(openAiRequest);assertContains(rt,"1024x1024");assertContains(rt,"output_compression")
         val g=GeminiWire.interactionsBody(GenerationRequest(prompt="x",model="gemini-3.1-flash-image",aspectRatio="16:9",previousResponseId="ix_1",metadata=mapOf("searchGrounding" to "true","thinkingLevel" to "high")))
         assertContains(g,"response_format");assertContains(g,"previous_interaction_id");assertContains(g,"google_search");assertContains(g,"thinking_level")
+    }
+    @Test fun validatorRejectsDroppedProviderSemantics(){
+        val singleOnly=ProviderCapabilities(textToImage=true,parallelVariants=false,outputFormats=setOf("png"))
+        assertFailsWith<CapabilityException>{CapabilityValidator.validate(GenerationRequest(prompt="x",model="m",variants=2),singleOnly)}
+        val transparent=ProviderCapabilities(textToImage=true,transparentBackground=true,outputFormats=setOf("png","jpeg"))
+        assertFailsWith<CapabilityException>{CapabilityValidator.validate(GenerationRequest(prompt="x",model="m",transparent=true,outputFormat="jpeg"),transparent)}
+    }
+    @Test fun openAiRejectsInvalidCurrentDimensionContractBeforeNetwork(){
+        val provider=OpenAiProvider(apiKey={"test"})
+        assertFailsWith<IllegalArgumentException>{provider.generate(GenerationRequest(prompt="x",model="gpt-image-2.5-flare",width=1000,height=1000))}
+        assertFailsWith<IllegalArgumentException>{provider.responsesGenerate(GenerationRequest(prompt="x",model="gpt-image-2.5-flare",variants=2))}
     }
     @Test fun geminiImageParsingIgnoresUnrelatedData(){
         val blocks=JsonUtil.imageBlocks("""{"steps":[{"type":"tool_result","data":"bm90LWltYWdl"},{"type":"model_output","content":[{"type":"image","mime_type":"image/png","data":"aGVsbG8="}]}]}""")
