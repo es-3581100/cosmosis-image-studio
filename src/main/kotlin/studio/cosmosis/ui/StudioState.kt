@@ -19,6 +19,7 @@ data class UiSnapshot(
     val referencePaths:List<String> = emptyList(),
     val analysisRegions:List<VisualRegion> = emptyList(),
     val analysisVisible:Boolean=true,
+    val ormlEnabled:Boolean=true,
     val provider:String="OPENAI",
     val model:String="gpt-image-2.5-flare",
     val jobState:String="IDLE",
