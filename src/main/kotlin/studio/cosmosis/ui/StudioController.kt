@@ -96,7 +96,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val v=VersionNode(parentId=currentVersionId(),assetId=a.id,operation=VersionOperation.IMPORT,name=source.fileName.toString())
         graph.add(v);db!!.saveVersion(v)
         project!!.currentVersionId=v.id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)
-        currentMaskId=null;state.update{it.copy(imagePath=pp.root.resolve(a.path).toString(),imageWidth=a.width,imageHeight=a.height,currentVersion=v.id,versions=graph.all(),maskPath=null,maskOverlayPath=null,message="IMPORTED / ${a.width}×${a.height}")}
+        currentMaskId=null;state.update{it.copy(imagePath=pp.root.resolve(a.path).toString(),imageWidth=a.width,imageHeight=a.height,currentVersion=v.id,versions=graph.all(),maskPath=null,maskOverlayPath=null,analysisRegions=emptyList(),message="IMPORTED / ${a.width}×${a.height}")}
     }
 
     fun addReferenceImage(source:Path):ImageAsset{
@@ -127,9 +127,13 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     fun analyzeCurrent():String{
         val img=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
         val result=ImageToPrompt.extract(img,PromptOutputMode.SUBJECT_REPLACEABLE)
-        state.update{it.copy(promptBody=result.plainText,promptTitle="Image → Prompt / ${img.fileName}",message="LOCAL ANALYSIS COMPLETE")}
+        val pp=requireNotNull(paths);val asset=assetForCurrent()
+        asset?.let{Files.writeString(pp.metadata.resolve("analysis-"+it.id+".json"),result.json)}
+        state.update{it.copy(promptBody=result.plainText,promptTitle="Image → Prompt / ${img.fileName}",analysisRegions=result.regions,analysisVisible=true,message="LOCAL ANALYSIS COMPLETE / "+result.regions.size+" REGION(S)")}
         return result.plainText
     }
+
+    fun setAnalysisVisible(visible:Boolean){state.update{it.copy(analysisVisible=visible,message="ANALYSIS OVERLAY / "+if(visible)"VISIBLE" else "HIDDEN")}}
 
     fun savePrompt(title:String,body:String,treePath:String="MY PROMPTS/General"):PromptAsset=
         savePromptAsset(PromptAsset(title=title.ifBlank{"Untitled prompt"},body=body,treePath=treePath))
@@ -492,7 +496,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         )
         generations.removeIf{it.id==generationId};generations+=gen;db!!.saveGeneration(gen)
         val firstAsset=assets[outputIds.firstOrNull()];val firstPath=outputPaths.firstOrNull()?.toString()
-        currentMaskId=null;state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),maskPath=null,maskOverlayPath=null,jobState="COMPLETE",message="GENERATION COMPLETE / "+outputIds.size+" OUTPUT(S)")}
+        currentMaskId=null;state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),maskPath=null,maskOverlayPath=null,analysisRegions=emptyList(),jobState="COMPLETE",message="GENERATION COMPLETE / "+outputIds.size+" OUTPUT(S)")}
         return outputPaths
     }
 
@@ -573,7 +577,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         assets[asset.id]=asset;db!!.saveAsset(asset)
         val v=VersionNode(parentId=parent,assetId=asset.id,operation=operation,name=name);graph.add(v);db!!.saveVersion(v)
         project!!.currentVersionId=v.id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)
-        currentMaskId=null;state.update{it.copy(imagePath=file.toString(),imageWidth=image.width,imageHeight=image.height,currentVersion=v.id,versions=graph.all(),maskPath=null,maskOverlayPath=null,message="$operation / $name")}
+        currentMaskId=null;state.update{it.copy(imagePath=file.toString(),imageWidth=image.width,imageHeight=image.height,currentVersion=v.id,versions=graph.all(),maskPath=null,maskOverlayPath=null,analysisRegions=emptyList(),message="$operation / $name")}
         return file
     }
 
@@ -610,7 +614,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         currentMaskId=latestMask?.id
         val maskPath=latestMask?.let{pp.root.resolve(it.path)}?.takeIf(Files::isRegularFile)
         val overlay=maskPath?.let{renderMaskOverlay(it)}
-        state.update{it.copy(currentVersion=id,imagePath=a?.let{pp.root.resolve(it.path).toString()}?:it.imagePath,imageWidth=a?.width?:it.imageWidth,imageHeight=a?.height?:it.imageHeight,maskPath=maskPath?.toString(),maskOverlayPath=overlay?.toString(),message="VERSION $id")}
+        state.update{it.copy(currentVersion=id,imagePath=a?.let{pp.root.resolve(it.path).toString()}?:it.imagePath,imageWidth=a?.width?:it.imageWidth,imageHeight=a?.height?:it.imageHeight,maskPath=maskPath?.toString(),maskOverlayPath=overlay?.toString(),analysisRegions=emptyList(),message="VERSION $id")}
     }
     fun setCompareVersion(id:String?){val path=id?.let(graph::get)?.let{assets[it.assetId]}?.let{paths!!.root.resolve(it.path).toString()};state.update{it.copy(comparePath=path,compareMode=if(path==null)"OFF" else "SPLIT",message=if(path==null)"COMPARE OFF" else "COMPARE / $id")}}
     fun versionNodes()=graph.all()
