@@ -121,11 +121,46 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         add(actions,BorderLayout.SOUTH)
     }
 
+    private fun referencePanel():JPanel=panel().apply{
+        layout=BorderLayout(0,8)
+        add(label("ACTIVE REFERENCE IMAGES / provider capability limits still apply"),BorderLayout.NORTH)
+        referenceList.selectionMode=ListSelectionModel.SINGLE_SELECTION;add(JScrollPane(referenceList),BorderLayout.CENTER)
+        val actions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(actions,"＋ ADD"){chooseReference()};button(actions,"REMOVE"){referenceList.selectedValue?.let{controller.removeReferenceImage(it.id)}}
+        button(actions,"CLEAR"){controller.clearReferenceImages()}
+        add(actions,BorderLayout.SOUTH)
+    }
+
+    private fun directivePanel():JPanel=panel().apply{
+        layout=BorderLayout(0,8)
+        directiveList.selectionMode=ListSelectionModel.SINGLE_SELECTION
+        directiveList.addListSelectionListener{if(!it.valueIsAdjusting)directiveList.selectedValue?.let{x->loadDirective(x.id)}}
+        val editor=panel().apply{layout=BoxLayout(this,BoxLayout.Y_AXIS);add(label("TITLE"));add(directiveTitle);add(label("DIRECTIVE BODY"));add(JScrollPane(directiveBody));add(directiveEnabled)}
+        val split=JSplitPane(JSplitPane.HORIZONTAL_SPLIT,JScrollPane(directiveList),editor).apply{resizeWeight=.35;dividerLocation=240;border=null}
+        add(split,BorderLayout.CENTER)
+        val actions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(actions,"＋ NEW"){newDirective()};button(actions,"SAVE"){saveDirective()};button(actions,"DELETE"){selectedDirectiveId?.let{controller.deleteDirective(it);newDirective();refreshDirectives()}}
+        add(actions,BorderLayout.SOUTH)
+    }
+
     private fun versionPanel():JPanel=panel().apply {
         layout=BorderLayout(0,8);versionList.selectionMode=ListSelectionModel.SINGLE_SELECTION;add(JScrollPane(versionList),BorderLayout.CENTER)
-        val actions=panel(FlowLayout(FlowLayout.LEFT,5,5));button(actions,"OPEN VERSION"){versionList.selectedValue?.let{controller.setCurrentVersion(it.id)}};button(actions,"COMPARE WITH CURRENT"){versionList.selectedValue?.let{controller.setCompareVersion(it.id)}};button(actions,"COMPARE OFF"){controller.setCompareVersion(null)};add(actions,BorderLayout.SOUTH)
+        val actions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(actions,"OPEN VERSION"){versionList.selectedValue?.let{controller.setCurrentVersion(it.id)}}
+        button(actions,"COMPARE"){versionList.selectedValue?.let{controller.setCompareVersion(it.id)}};button(actions,"COMPARE OFF"){controller.setCompareVersion(null)}
+        button(actions,"RENAME"){val v=versionList.selectedValue?:return@button;val name=JOptionPane.showInputDialog(this@ControlDock,"Version name",v.label.substringAfterLast(" / "))?:return@button;runCatching{controller.renameVersion(v.id,name)}.onFailure(::showError)}
+        button(actions,"★ FAVORITE"){versionList.selectedValue?.let{runCatching{controller.toggleVersionFavorite(it.id)}.onFailure(::showError)}}
+        button(actions,"EXPORT CURRENT"){exportCurrentImage()}
+        add(actions,BorderLayout.SOUTH)
     }
-    private fun workerPanel():JPanel=panel().apply{layout=BorderLayout();workers.isEditable=false;workers.font=Font(Font.MONOSPACED,Font.PLAIN,12);add(JScrollPane(workers),BorderLayout.CENTER);val actions=panel(FlowLayout(FlowLayout.LEFT,5,5));button(actions,"CANCEL ACTIVE"){runCatching{controller.cancelActiveJobs()}.onSuccess{n->status.text=if(n==0)"NO ACTIVE JOBS" else "CANCEL REQUESTED / $n JOB(S)"}.onFailure(::showError)};add(actions,BorderLayout.SOUTH)}
+
+    private fun workerPanel():JPanel=panel().apply{
+        layout=BorderLayout(0,8);workerList.selectionMode=ListSelectionModel.SINGLE_SELECTION;add(JScrollPane(workerList),BorderLayout.CENTER)
+        val actions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(actions,"RESUME SELECTED"){workerList.selectedValue?.let{runCatching{controller.resumeJob(it.id)}.onSuccess{status.text="RESUME QUEUED / "+it.id}.onFailure(::showError)}}
+        button(actions,"CANCEL ACTIVE"){runCatching{controller.cancelActiveJobs()}.onSuccess{n->status.text=if(n==0)"NO ACTIVE JOBS" else "CANCEL REQUESTED / "+n+" JOB(S)"}.onFailure(::showError)}
+        add(actions,BorderLayout.SOUTH)
+    }
 
     private fun settingsPanel():JPanel=panel().apply {
         layout=BoxLayout(this,BoxLayout.Y_AXIS)
