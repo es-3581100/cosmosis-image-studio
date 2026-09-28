@@ -284,7 +284,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
                     val outputIds=mutableListOf<String>();val outputPaths=mutableListOf<Path>()
                     res.images.forEachIndexed{i,gi->
                         val ext=when(gi.mime){"image/jpeg"->"jpg";"image/webp"->"webp";else->"png"}
-                        val file=pp.generated.resolve("${res.requestId}-${i+1}.$ext");Files.write(file,gi.bytes);outputPaths+=file
+                        val file=pp.generated.resolve("${res.requestId}-${i+1}.$ext");Files.write(file,gi.bytes);outputPaths.add(file)
                         val im=ImageIO.read(file.toFile())
                         val a=ImageAsset(kind=AssetKind.GENERATED,path=pp.root.relativize(file).toString(),mime=gi.mime,width=im?.width?:0,height=im?.height?:0,sha256=sha256(gi.bytes),sourceAssetId=parentAsset,provenance="$providerId/$model")
                         assets[a.id]=a;db!!.saveAsset(a);outputIds+=a.id
@@ -326,10 +326,12 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         }
     }
 
-    fun cancelActiveJobs(){
-        val eng=engine?:return
-        eng.snapshot().filter{it.state in setOf(JobState.QUEUED,JobState.RUNNING,JobState.WAITING)}.forEach{eng.cancel(it.id)}
-        state.update{it.copy(jobs=eng.snapshot(),jobState="CANCELLED",message="ACTIVE JOBS CANCELLED")}
+    fun cancelActiveJobs():Int{
+        val eng=engine?:return 0
+        val active=eng.snapshot().filter{it.state in setOf(JobState.QUEUED,JobState.RUNNING,JobState.WAITING)}
+        active.forEach{eng.cancel(it.id)}
+        state.update{it.copy(jobs=eng.snapshot(),jobState=if(active.isEmpty())it.jobState else "CANCELLED",message=if(active.isEmpty())"NO ACTIVE JOBS" else "ACTIVE JOBS CANCELLED / ${active.size}")}
+        return active.size
     }
 
     fun rotateCurrent(clockwise:Boolean=true){
