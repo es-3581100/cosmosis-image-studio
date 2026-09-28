@@ -1,0 +1,4 @@
+Cosmosis Image Studio 0.1.0
+
+This distribution contains original implementation code and references third-party libraries and projects documented in docs/THIRD_PARTY.md.
+No source code from NanoBananaEditor, DonPad, image-to-prompt, image-2-reverse-prompt, html-anything, or ORML is copied into this project.
