@@ -1,141 +1,74 @@
 # Interrupted Build Recovery Manifest
 
-Recovery date: 2026-09-27
+Recovery date: 2026-09-28
 
-## Recovery disposition
+## Current recovery disposition
 
-RECOVERED — a coherent source tree, tests, documentation, build metadata, and verification logs survived in `/mnt/data/offworld-image-studio`.
+PARTIALLY_RECOVERED — the latest interrupted Cosmosis archive has been recovered exactly through a durable GitHub branch, with the remaining gap bounded to seven meaningful source/config/test files plus five regenerable test logs.
 
-## Last known authority
+## Current authority
 
-- Phase/task: Modern local-first AI image editor / Offworld Image Studio, interrupted during implementation hardening.
-- Baseline SHA: UNAVAILABLE — no `.git` directory or surviving repository metadata was present in the recovered workspace.
-- Original working branch: UNAVAILABLE.
-- Pre-recovery remote HEAD: UNAVAILABLE — no remote metadata survived.
-- Recovery checkpoint SHA: `6b37604e949c7704aab2918ea1517540ff3af420`.
-- Recovery branch: `recovery/interrupted-build-20260927`.
-- Last reported implementation state: Kotlin/OpenRNDR workstation architecture, local project/prompt/mask/lineage/provider/worker/doc systems implemented; dependency-light smoke suite passing; full dependency build and live provider/ORML-native tests still unverified.
-- Interruption: conversational execution stream ended before a final packaged handoff.
+- Repository: `es-3581100/cosmosis-image-studio`
+- Main branch pre-recovery HEAD: `2f58ef2cf82fe38dd6a59bfdd1cfed57aeab839f`
+- Exact archive-prefix branch: `recovery/partial-source`
+- Exact archive-prefix checkpoint: `9e22620166ab7b25912d170caa15498feaf58730`
+- Source archive expected base64 bytes: 117328
+- Exact uploaded/recovered base64 bytes: 100000
+- Missing archive tail: 17328 bytes
+- Partial extraction workflow run: `36475132796` — SUCCESS
+- Main was not replaced during partial extraction.
 
 ## Recovery sources used
 
-1. Exact surviving local filesystem tree under `/mnt/data/offworld-image-studio`.
-2. Preserved test logs under `test-results/`.
-3. Existing architecture/capability/license/source audit documents.
-4. Current-turn rerun of `scripts/core-smoke.sh` and `scripts/static-audit.sh`.
+1. Exact GitHub `.bootstrap/part-*` objects from the interrupted publication.
+2. GitHub Actions extraction logs from runs `36474969717` and `36475132796`.
+3. Durable recovery branch `recovery/partial-source`.
+4. Older complete local recovery archives/worktree for baseline versions of files in the missing archive tail.
+5. Exact previously recorded diffs/test outputs for later Cosmosis changes.
 
-No alternate branch refs, reflog, stash, orphaned Git objects, patches, archives, or peer worktrees existed in `/mnt/data` because no surviving Git repository was present.
+## Exact recovered inventory
 
-## Exact pre-checkpoint snapshot
+The archive-prefix extraction recovered 72 of the 84 original tracked files exactly. It includes all tracked files through:
 
-- Archive: `/mnt/data/offworld-image-studio.pre-recovery-checkpoint.20260927T124126Z.tar.gz`
-- SHA-256: `aa019e4e2234dd989f0e3d24daad35928f35484a4fbddb50f925f39351a7edc3`
+`src/main/kotlin/studio/cosmosis/ui/StudioController.kt`
 
-This archive was created before adding this recovery manifest or initializing Git.
+The recovery branch also contains `RECOVERY_PARTIAL.md`, which is recovery metadata rather than an original archive file.
 
-## Recovery inventory
+## Missing original tracked files
 
-- 37 Kotlin production source files.
-- 2 Kotlin/JUnit test files.
-- 7 per-capability/provider agent HTML documents plus master agent/user indexes.
-- Build/configuration files, source/license/capability audits, README, AGENTS, changelog and NOTICE.
-- Preserved core/static/Kotlin compile verification logs.
+Meaningful source/config/test files requiring evidence-driven reconstruction:
 
-Classification of the coherent recovered tree: `RECOVERED_EXACT`.
+1. `src/main/kotlin/studio/cosmosis/ui/StudioState.kt`
+2. `src/main/kotlin/studio/cosmosis/workers/Director.kt`
+3. `src/main/kotlin/studio/cosmosis/workers/ImageCritic.kt`
+4. `src/main/kotlin/studio/cosmosis/workers/JobEngine.kt`
+5. `src/main/resources/config/model-registry.json`
+6. `src/test/kotlin/studio/cosmosis/CoreBehaviorTest.kt`
+7. `src/test/kotlin/studio/cosmosis/SqliteRecoveryTest.kt`
 
-Known absent recovery classes: no Git metadata, no remote refs, no orphan object identities, no prior commit SHA.
+Regenerable verification logs, not source authority:
 
-## Verification
+- `test-results/core-smoke.log`
+- `test-results/kotlinc-all-with-stubs.log`
+- `test-results/kotlinc-jobengine.log`
+- `test-results/kotlinc-ui-controller.log`
+- `test-results/static-audit.log`
 
-Passing:
+## Conflicts
 
-```text
-./scripts/core-smoke.sh
-  PASS prompt revisions + provenance
-  PASS prompt exchange
-  PASS lineage branching
-  PASS mask undo redo invert feather persistence
-  PASS local image analysis + image-to-prompt
-  PASS capability validation
-  PASS provider wire translation
-  PASS model registry parse + migration
-  PASS secret redaction
-  PASS ORML capability registry
-  PASS HTML export secret sanitation
-  PASS agent index parsing
-  CORE_SMOKE_PASS
+None identified among the exact recovered prefix files.
 
-./scripts/static-audit.sh
-  PASS agent HTML manifests: 7
-  PASS master hyper-index Offworld/reduced-motion markers
-  PASS secret literal scan
-  PASS Offworld anti-pattern scan
-```
+The seven missing meaningful files are classified `RECOVERED_PARTIAL` until rebuilt from stronger surviving evidence and verified.
 
-Environment:
+## Recovery rules
 
-```text
-Java: OpenJDK 21.0.11
-kotlinc: 1.9.0
-system Gradle: absent
-```
-
-Environment-classified failure:
-
-```text
-./gradlew test
-exit 127
-Gradle is not installed; the recovered source bundle intentionally does not vendor the wrapper JAR.
-```
-
-`git fsck --full` passes and the recovery bundle verifies as complete history.
-
-## Known incomplete / unverified work
-
-- Full dependency-resolved Gradle desktop build has not been executed on this host.
-- OPENRNDR runtime launch and visual acceptance have not been exercised on this host.
-- Native ORML inference is intentionally fail-closed/unbundled and remains unverified.
-- Paid/network provider smoke tests have not been run.
-- Gemini adapter hardening toward the current preferred API surface remains listed in `CAPABILITY_MATRIX.md`.
-- Bulk premade community prompt import remains intentionally deferred pending per-source/per-entry provenance review.
-
-## Recovery rule from this checkpoint
-
-Preserve this commit before any redesign or dependency changes. Future repairs should be separate commits so recovered work and post-recovery work remain distinguishable.
+- Do not rebuild the project from design prose.
+- Do not replace exact archive-prefix files unless verification demonstrates a defect.
+- Reconstruct only the seven bounded meaningful missing files.
+- Regenerate test logs only after source recovery.
+- Keep repaired work on the recovery branch until dependency-resolved verification passes.
+- Replace `main` only with a coherent verified tree and preserve main history.
 
 ## Next smallest action
 
-Restore/verify a standard Gradle wrapper and attempt a dependency-resolved `./gradlew test`, classifying any failure as environment/dependency/implementation rather than rewriting code from the original design prompt.
-
----
-
-## Recovery continuation — 2026-09-27T13:46Z
-
-A second interruption was recovered without reconstructing source from prose.
-
-Authority on re-entry:
-
-- Durable local HEAD before recovery: `cb83308` (`feat(cosmosis): continue recovered image studio vertical slice`).
-- Surviving branch: `recovery/interrupted-build-20260927`.
-- Surviving uncommitted exact files: 5.
-- `git fsck --full --no-reflogs`: PASS.
-- Exact pre-checkpoint archive: `/mnt/data/cosmosis-image-studio.pre-recovery-20260927T134643Z.tar.gz`.
-- Archive SHA-256: `c8f9a8436c9a1e2d3b227b49140fff9193513589843ba1ee89cdd0a5a49a57da`.
-
-Recovered exact uncommitted files:
-
-- `src/main/kotlin/studio/cosmosis/prompt/PromptExchange.kt`
-- `src/main/kotlin/studio/cosmosis/provider/OpenAiProvider.kt`
-- `src/main/kotlin/studio/cosmosis/storage/SqliteStore.kt`
-- `src/main/kotlin/studio/cosmosis/ui/ControlDock.kt`
-- `src/main/kotlin/studio/cosmosis/ui/StudioController.kt`
-
-Verification before checkpoint:
-
-```text
-./scripts/core-smoke.sh            PASS / 14 checks / CORE_SMOKE_PASS
-./scripts/static-audit.sh          PASS
-./scripts/kotlinc-stub-check.sh    PASS / KOTLINC_STUB_CHECK_PASS
-```
-
-Recovered implementation represented by this checkpoint includes structured prompt exchange/persistence continuation and the beginning of executable Agent Build orchestration. It is preserved before further feature work.
+Inspect exact recovered callers/types on `recovery/partial-source`, reconstruct the seven missing meaningful files from older exact artifacts plus recorded later diffs, then run deterministic core/static/stub checks and dependency-resolved GitHub CI.
