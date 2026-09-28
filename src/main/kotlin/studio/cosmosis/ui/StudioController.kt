@@ -307,14 +307,26 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
 
     fun ormlDiagnostics()=orml.diagnostics()
 
+    fun setWorkflowMode(mode:WorkflowMode){state.update{it.copy(workflowMode=mode,message="WORKFLOW / "+mode.name)}}
+    fun setMaskVisible(visible:Boolean){state.update{it.copy(maskVisible=visible,message="MASK OVERLAY / "+if(visible)"VISIBLE" else "HIDDEN")}}
+    fun setMaskOverlayStyle(hex:String,opacity:Double){
+        val normalized=normalizeHexColor(hex);val alpha=opacity.coerceIn(.05,1.0)
+        db?.putSetting("appearance.maskOverlayColor",normalized);db?.putSetting("appearance.maskOverlayOpacity",alpha.toString())
+        val overlay=state.get().maskPath?.let(Path::of)?.takeIf(Files::isRegularFile)?.let{renderMaskOverlay(it,normalized,alpha)}
+        state.update{it.copy(maskOverlayColor=normalized,maskOverlayOpacity=alpha,maskOverlayPath=overlay?.toString()?:it.maskOverlayPath,message="MASK OVERLAY / "+normalized+" / "+String.format("%.0f%%",alpha*100))}
+    }
+    fun setAppearance(reducedMotion:Boolean,motionLevel:String,uiDensity:String){
+        val motion=motionLevel.lowercase().takeIf{it in setOf("off","subtle","normal")} ?: "normal"
+        val density=uiDensity.lowercase().takeIf{it in setOf("compact","comfortable","spacious")} ?: "comfortable"
+        db?.putSetting("appearance.reducedMotion",reducedMotion.toString());db?.putSetting("appearance.motionLevel",motion);db?.putSetting("appearance.uiDensity",density)
+        state.update{it.copy(reducedMotion=reducedMotion,motionLevel=motion,uiDensity=density,message="APPEARANCE / "+density.uppercase()+" / MOTION "+if(reducedMotion)"REDUCED" else motion.uppercase())}
+    }
+
     private fun persistMask(doc:MaskDocument,method:String,feather:Int=0,inverted:Boolean=false):Path{
         val pp=requireNotNull(paths);val imagePath=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
         val image=requireNotNull(ImageIO.read(imagePath.toFile()));require(doc.width==image.width&&doc.height==image.height){"Mask dimensions must match source image"}
         val stamp=System.currentTimeMillis();val out=pp.masks.resolve("mask-$stamp.png");doc.save(out)
-        val overlay=pp.previews.resolve("mask-overlay-$stamp.png");val src=doc.toBufferedImage()
-        val rgba=BufferedImage(src.width,src.height,BufferedImage.TYPE_INT_ARGB)
-        for(y in 0 until src.height)for(x in 0 until src.width){val m=src.raster.getSample(x,y,0);val a=(m*.42).toInt().coerceIn(0,110);rgba.setRGB(x,y,(a shl 24) or (0xEF shl 16) or (0x44 shl 8) or 0x44)}
-        ImageIO.write(rgba,"png",overlay.toFile())
+        val overlay=renderMaskOverlay(out)
         val source=assetForCurrent()
         val rec=MaskRecord(sourceAssetId=source?.id?:"unknown",path=pp.root.relativize(out).toString(),width=doc.width,height=doc.height,featherRadius=feather,inverted=inverted,method=method,derivedMetadata=mapOf("coverage" to "%.4f".format(doc.coverage())))
         db!!.saveMask(rec);currentMaskId=rec.id
