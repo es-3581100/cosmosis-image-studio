@@ -149,3 +149,25 @@ The orphan recovery branch vs. `main` ancestry difference is structural, not a c
 ## Next smallest action
 
 Create a promotion commit whose tree is the verified recovery tree and whose parent is current `main`, fast-forward `main` to that commit with `force=false`, then verify the resulting `main` CI run before resuming normal implementation.
+
+
+---
+
+## Promotion completion
+
+Recovery promotion completed on 2026-09-28.
+
+- Promotion commit: `900bd20303a0dfdf02d83538fa08359fd9906f7e`
+- Promotion tree: `fc3e90146d651f319fd292732cb23bd25d9408f9`
+- First parent (pre-promotion `main`): `2f58ef2cf82fe38dd6a59bfdd1cfed57aeab839f`
+- Second parent (verified recovery history): `2ce8ddf31789acf805d61e54267fb01a43a0c6f3`
+- Ref update: fast-forward with `force=false`
+- Main verification run: `36480100741`
+- Main verification result: SUCCESS
+- Core smoke: PASS
+- Static provenance / secret / Offworld audit: PASS
+- Dependency-resolved `test acceptanceSmoke`: PASS
+- Temporary `.bootstrap` payloads are absent from the promoted tree.
+- Temporary recovery-extractor workflow is absent; only `.github/workflows/ci.yml` remains.
+
+Recovery is complete. Normal implementation may resume from `main`. The next bounded verification action outside CI is an optional real graphical-workstation launch/visual acceptance pass; paid provider smoke tests remain explicit opt-in work.
