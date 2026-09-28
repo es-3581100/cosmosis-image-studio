@@ -8,17 +8,18 @@ DEST="${1:-${XDG_DATA_HOME:-$HOME/.local/share}/cosmosis/models/${MODEL_NAME}.pb
 
 mkdir -p "$(dirname "$DEST")"
 
-verify() {
+verify_file() {
+  local path="$1"
   local found
-  found="$(sha256sum "$DEST" | awk '{print $1}')"
+  found="$(sha256sum "$path" | awk '{print $1}')"
   if [[ "$found" != "$EXPECTED_SHA" ]]; then
-    echo "hash mismatch: $found != $EXPECTED_SHA" >&2
+    echo "hash mismatch for $path: $found != $EXPECTED_SHA" >&2
     return 1
   fi
 }
 
 if [[ -f "$DEST" ]]; then
-  verify
+  verify_file "$DEST"
   printf '%s\n' "$DEST"
   exit 0
 fi
@@ -26,6 +27,7 @@ fi
 tmp="${DEST}.tmp.$$"
 trap 'rm -f "$tmp"' EXIT
 curl --fail --location --proto '=https' --tlsv1.2 "$URL" --output "$tmp"
+verify_file "$tmp"
 mv "$tmp" "$DEST"
-verify
+trap - EXIT
 printf '%s\n' "$DEST"
