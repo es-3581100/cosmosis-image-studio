@@ -1,6 +1,7 @@
 package studio.cosmosis.orml.runner
 
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import javax.imageio.ImageIO
 
 class RunnerEngine(
@@ -44,7 +45,7 @@ class RunnerEngine(
 
         if(!result.ok)return result.copy(message=sanitize(result.message))
         val spec=CapabilityRegistry.find(request.capabilityId)!!
-        if(!Files.isRegularFile(request.output))return RunnerResult(false,"backend reported success without output file")
+        if(!Files.isRegularFile(request.output,LinkOption.NOFOLLOW_LINKS))return RunnerResult(false,"backend reported success without a regular output file")
         if(Files.size(request.output)<=0)return RunnerResult(false,"backend reported success with empty output file")
         when(spec.outputKind){
             OutputKind.JSON -> {
