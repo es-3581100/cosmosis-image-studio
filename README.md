@@ -24,6 +24,16 @@ COSMOSIS_LIVE_PROVIDER_TESTS=1 ./gradlew liveProviderSmoke
 
 Use environment variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, and `LITELLM_API_KEY`. LiteLLM uses `LITELLM_BASE_URL`. Secrets are never written to project data by design.
 
+## Optional ORML adapters
+
+Cosmosis keeps ORML model runtimes outside the core dependency graph. Optional local-ML integrations implement `studio.cosmosis.orml.OrmlAdapter` and register the implementation through Java `ServiceLoader` using:
+
+```text
+META-INF/services/studio.cosmosis.orml.OrmlAdapter
+```
+
+An adapter is reported `READY` only when it is actually present on the runtime classpath. Duplicate providers for one capability are rejected. File-producing adapters must return concrete files that exist before Cosmosis accepts the result. Without an adapter, the existing deterministic local saliency mask remains available; Cosmosis does not claim that fallback is ORML inference.
+
 ## Offline verification
 
 The dependency-light domain can be exercised without Gradle/network:

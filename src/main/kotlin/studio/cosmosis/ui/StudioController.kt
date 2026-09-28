@@ -9,6 +9,8 @@ import studio.cosmosis.lineage.VersionGraph
 import studio.cosmosis.mask.MaskDocument
 import studio.cosmosis.mask.MaskStroke
 import studio.cosmosis.mask.SmartMask
+import studio.cosmosis.orml.OrmlExecutor
+import studio.cosmosis.orml.OrmlInvocation
 import studio.cosmosis.prompt.PromptCompiler
 import studio.cosmosis.prompt.PromptLibrary
 import studio.cosmosis.prompt.PromptExchange
@@ -41,6 +43,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
 
     val providers=ProviderRegistry.default()
     val agentIndex=AgentIndex(docsRoot)
+    val orml=OrmlExecutor.discovered()
 
     fun createProject(root:Path,name:String){
         closeProject()
@@ -234,7 +237,26 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val doc=MaskDocument(img.width,img.height);strokes.forEach(doc::apply);if(invert)doc.invert();if(feather>0)doc.feather(feather)
         return persistMask(doc,"manual-brush",feather,invert)
     }
-    fun smartSaliencyMask():Path=persistMask(SmartMask.saliency(Path.of(requireNotNull(state.get().imagePath){"No image loaded"})),"smart-saliency")
+    fun smartSaliencyMask():Path {
+        val input=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
+        if(orml.status("smart-subject-mask")=="READY"){
+            val pp=requireNotNull(paths)
+            val result=orml.invoke(
+                OrmlInvocation(
+                    capabilityId="smart-subject-mask",
+                    inputPath=input.toString(),
+                    options=mapOf("outputDir" to pp.masks.toString(),"outputFormat" to "png")
+                )
+            )
+            require(result.ok){result.message}
+            val output=result.outputPaths.firstOrNull() ?: error("ORML subject-mask adapter returned no output")
+            val image=ImageIO.read(Path.of(output).toFile()) ?: error("ORML subject-mask adapter returned an unreadable image")
+            return persistMask(MaskDocument.fromBufferedImage(image),"orml-u2net")
+        }
+        return persistMask(SmartMask.saliency(input),"smart-saliency-fallback")
+    }
+
+    fun ormlDiagnostics()=orml.diagnostics()
 
     private fun persistMask(doc:MaskDocument,method:String,feather:Int=0,inverted:Boolean=false):Path{
         val pp=requireNotNull(paths);val imagePath=Path.of(requireNotNull(state.get().imagePath){"No image loaded"})
@@ -387,6 +409,9 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
             appendLine("version=${s.currentVersion}");appendLine("image=${s.imageWidth}x${s.imageHeight}")
             appendLine("provider=${s.provider}");appendLine("model=${s.model}");appendLine("jobState=${s.jobState}")
             appendLine("versions=${graph.all().size}");appendLine("generations=${generations.size}")
+            val ormlRuntime=orml.diagnostics()
+            ormlRuntime.statuses.forEach{(id,status)->appendLine("orml $id status=$status adapter=${ormlRuntime.adapters[id]?:"none"}")}
+            ormlRuntime.errors.forEach{appendLine("orml error=$it")}
             engine?.snapshot().orEmpty().forEach{appendLine("job ${it.id} ${it.type} ${it.state} retries=${it.retryCount} error=${it.error?:""}")}
         }
         Files.writeString(out,Redaction.sanitize(body));state.update{it.copy(message="DIAGNOSTICS EXPORTED / ${out.fileName}")};return out

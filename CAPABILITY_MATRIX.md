@@ -14,8 +14,9 @@
 | Gemini image generation/edit | Implemented adapter | Interactions API generation/editing, server-side turn chaining, optional Google Search grounding + thinking controls; paid live smoke remains opt-in |
 | LiteLLM/custom OpenAI-compatible | Implemented adapter | live gateway test not run here |
 | Durable worker queue | Implemented | persisted state + bounded retry/timeout/spend + cancellation result discard; dependency-light and stub verification PASS |
-| ORML discovery | Implemented | U2Net, BodyPix, classifier, super-resolution capability descriptors + docs |
-| ORML native inference | **Not verified/complete** | ORML binaries/models are intentionally not bundled; fail-closed runtime boundary |
+| ORML discovery | Implemented | U2Net, BodyPix, classifier, super-resolution capability descriptors + docs; runtime probes do not initialize model classes |
+| ORML adapter SPI | Implemented | `ServiceLoader` discovery, duplicate-provider rejection, adapter diagnostics, concrete-output validation, and fail-closed execution |
+| ORML native inference | **Not verified/complete** | No ORML model adapter is bundled. A separately installed, audited adapter must expose the SPI before Cosmosis reports `READY`; real U2Net/BodyPix/classifier/upscaler inference remains a workstation verification task |
 | Agent Build | Implemented | visible Director plan, explicit budget confirmation, indexed local knowledge context, bounded generation, critic annotation, lineage/report persistence; local acceptance path implemented |
 | HTML hyper-index/runtime lookup | Implemented | intent search/context packet; natural-language intent smoke PASS |
 | Project HTML report | Implemented | CSP self-contained, secret redaction; smoke PASS |

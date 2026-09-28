@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ORML runtime adapters</title>
+<style>
+:root{color-scheme:dark;--bg:#10100e;--fg:#ffffe3;--muted:#8c8c7d;--line:rgba(255,255,227,.16);--good:#22c55e;--bad:#ef4444}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--fg);font-family:Georgia,"Times New Roman",serif;line-height:1.62}
+header,main{max-width:1050px;margin:auto;padding:34px}header{border-bottom:1px solid var(--line)}h1,h2{font-weight:400}
+nav,code,pre,.eyebrow,.status{font-family:ui-monospace,"Cascadia Code","JetBrains Mono",monospace}.eyebrow{font-size:.7rem;color:var(--muted);letter-spacing:.2em}
+main{display:grid;grid-template-columns:220px 1fr;gap:34px}nav{border-right:1px solid var(--line)}nav a{display:block;color:var(--muted);text-decoration:none;padding:6px 16px 6px 0}
+section{padding-bottom:28px;margin-bottom:28px;border-bottom:1px solid var(--line);scroll-margin-top:20px}pre{white-space:pre-wrap;background:rgba(255,255,227,.025);border-left:2px solid var(--line);padding:13px}
+.good{color:var(--good)}.bad{color:var(--bad)}@media(max-width:760px){main{grid-template-columns:1fr}nav{border-right:0;border-bottom:1px solid var(--line);padding-bottom:18px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<header><div class="eyebrow">// ORML / RUNTIME CONTRACT</div><h1>Optional adapter SPI</h1><p>Attach audited local-ML implementations without making ORML a mandatory Cosmosis dependency.</p></header>
+<main>
+<nav><a href="#purpose">Purpose</a><a href="#discovery">Discovery</a><a href="#admission">Admission</a><a href="#mask">Mask behavior</a><a href="#failure">Failure</a><a href="#provenance">Provenance</a></nav>
+<article>
+<section id="purpose"><h2>Purpose</h2><p>Cosmosis owns the stable <code>OrmlAdapter</code> contract. External adapter JARs own model/runtime-specific code. The core application does not download model code during discovery.</p></section>
+<section id="discovery"><h2>Discovery</h2><p>Adapters are discovered from the runtime classpath with Java <code>ServiceLoader</code>. A plugin registers one implementation class in:</p><pre>META-INF/services/studio.cosmosis.orml.OrmlAdapter</pre><p>Discovery does not make the adapter authoritative by itself; its <code>capabilityId</code> must match the curated ORML registry.</p></section>
+<section id="admission"><h2>Admission checks</h2><p class="good">READY means one unambiguous adapter is installed for a known capability.</p><p>Duplicate providers are rejected rather than selected by classpath order. Class-presence probes use non-initializing class loading. File-producing adapters are accepted only when the reported output files exist.</p></section>
+<section id="mask"><h2>Smart subject mask</h2><p>When <code>smart-subject-mask</code> is READY, the studio invokes that adapter and persists its returned mask as a derived mask record. When no adapter is installed, the deterministic local saliency fallback remains available and is explicitly recorded as <code>smart-saliency-fallback</code>, not as ORML.</p></section>
+<section id="failure"><h2>Failure behavior</h2><p class="bad">Never silently convert an installed-adapter failure into a claimed ORML success.</p><p>Initialization, linkage, invocation, capability mismatch, missing input, and missing output errors fail closed and appear in sanitized diagnostics.</p></section>
+<section id="provenance"><h2>Upstream grounding</h2><p>The capability names are grounded in <code>openrndr/orml</code> modules including U2Net, BodyPix, image classifier, and super-resolution. Upstream implementation source is not copied here. Native inference remains unverified until a concrete adapter is installed and tested on a graphical workstation/runtime.</p></section>
+</article>
+</main>
+<script type="application/json" id="agent-index">{"capability":"orml-runtime-adapter","module":"orml-runtime","intents":["attach-local-ml","diagnose-orml","install-orml-adapter","local-model-runtime"],"aliases":["ORML SPI","ServiceLoader adapter","local ML adapter"],"inputs":["adapter-jar","image"],"outputs":["runtime-status","validated-adapter-result"],"cost":"local-compute","requiresNetwork":false}</script>
+</body>
+</html>
