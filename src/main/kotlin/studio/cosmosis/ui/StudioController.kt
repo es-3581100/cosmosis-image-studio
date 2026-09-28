@@ -96,7 +96,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val v=VersionNode(parentId=currentVersionId(),assetId=a.id,operation=VersionOperation.IMPORT,name=source.fileName.toString())
         graph.add(v);db!!.saveVersion(v)
         project!!.currentVersionId=v.id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)
-        state.update{it.copy(imagePath=pp.root.resolve(a.path).toString(),imageWidth=a.width,imageHeight=a.height,currentVersion=v.id,versions=graph.all(),message="IMPORTED / ${a.width}×${a.height}")}
+        currentMaskId=null;state.update{it.copy(imagePath=pp.root.resolve(a.path).toString(),imageWidth=a.width,imageHeight=a.height,currentVersion=v.id,versions=graph.all(),maskPath=null,maskOverlayPath=null,message="IMPORTED / ${a.width}×${a.height}")}
     }
 
     fun addReferenceImage(source:Path):ImageAsset{
@@ -492,7 +492,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         )
         generations.removeIf{it.id==generationId};generations+=gen;db!!.saveGeneration(gen)
         val firstAsset=assets[outputIds.firstOrNull()];val firstPath=outputPaths.firstOrNull()?.toString()
-        state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),jobState="COMPLETE",message="GENERATION COMPLETE / "+outputIds.size+" OUTPUT(S)")}
+        currentMaskId=null;state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),maskPath=null,maskOverlayPath=null,jobState="COMPLETE",message="GENERATION COMPLETE / "+outputIds.size+" OUTPUT(S)")}
         return outputPaths
     }
 
@@ -573,7 +573,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         assets[asset.id]=asset;db!!.saveAsset(asset)
         val v=VersionNode(parentId=parent,assetId=asset.id,operation=operation,name=name);graph.add(v);db!!.saveVersion(v)
         project!!.currentVersionId=v.id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)
-        state.update{it.copy(imagePath=file.toString(),imageWidth=image.width,imageHeight=image.height,currentVersion=v.id,versions=graph.all(),message="$operation / $name")}
+        currentMaskId=null;state.update{it.copy(imagePath=file.toString(),imageWidth=image.width,imageHeight=image.height,currentVersion=v.id,versions=graph.all(),maskPath=null,maskOverlayPath=null,message="$operation / $name")}
         return file
     }
 
@@ -605,7 +605,12 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
 
     fun setCurrentVersion(id:String){
         val v=requireNotNull(graph.get(id));project!!.currentVersionId=id;project!!.updatedAt=nowIso();db!!.saveProject(project!!)
-        val a=assets[v.assetId];state.update{it.copy(currentVersion=id,imagePath=a?.let{paths!!.root.resolve(it.path).toString()}?:it.imagePath,imageWidth=a?.width?:it.imageWidth,imageHeight=a?.height?:it.imageHeight,message="VERSION $id")}
+        val a=assets[v.assetId];val pp=requireNotNull(paths)
+        val latestMask=a?.let{asset->db!!.loadMasks().lastOrNull{it.sourceAssetId==asset.id}}
+        currentMaskId=latestMask?.id
+        val maskPath=latestMask?.let{pp.root.resolve(it.path)}?.takeIf(Files::isRegularFile)
+        val overlay=maskPath?.let{renderMaskOverlay(it)}
+        state.update{it.copy(currentVersion=id,imagePath=a?.let{pp.root.resolve(it.path).toString()}?:it.imagePath,imageWidth=a?.width?:it.imageWidth,imageHeight=a?.height?:it.imageHeight,maskPath=maskPath?.toString(),maskOverlayPath=overlay?.toString(),message="VERSION $id")}
     }
     fun setCompareVersion(id:String?){val path=id?.let(graph::get)?.let{assets[it.assetId]}?.let{paths!!.root.resolve(it.path).toString()};state.update{it.copy(comparePath=path,compareMode=if(path==null)"OFF" else "SPLIT",message=if(path==null)"COMPARE OFF" else "COMPARE / $id")}}
     fun versionNodes()=graph.all()
