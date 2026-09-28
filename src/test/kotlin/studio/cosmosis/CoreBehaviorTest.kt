@@ -82,21 +82,22 @@ class CoreBehaviorTest {
         val input=dir.resolve("input image.png")
         ImageIO.write(BufferedImage(20,14,BufferedImage.TYPE_INT_RGB),"png",input.toFile())
         val runner=dir.resolve("fake runner.sh")
-        Files.writeString(runner,"""#!/bin/sh
-out=""
-in=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --input) shift; in="$1" ;;
-    --output) shift; out="$1" ;;
-    --capability) shift ;;
-    --option) shift ;;
-  esac
-  shift
-done
-cp "$in" "$out"
-echo "api_key=supersecret runner-ok"
-""")
+        Files.writeString(runner,listOf(
+            "#!/bin/sh",
+            "out=\"\"",
+            "in=\"\"",
+            "while [ \"\\$#\" -gt 0 ]; do",
+            "  case \"\\$1\" in",
+            "    --input) shift; in=\"\\$1\" ;;",
+            "    --output) shift; out=\"\\$1\" ;;",
+            "    --capability) shift ;;",
+            "    --option) shift ;;",
+            "  esac",
+            "  shift",
+            "done",
+            "cp \"\\$in\" \"\\$out\"",
+            "echo \"api_key=supersecret runner-ok\""
+        ).joinToString("\\n")+"\\n")
         val perms=Files.getPosixFilePermissions(runner).toMutableSet()
         perms+=java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE
         Files.setPosixFilePermissions(runner,perms)
