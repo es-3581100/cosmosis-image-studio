@@ -164,12 +164,46 @@ class ControlDock(private val controller:StudioController,private val state:Stud
 
     private fun settingsPanel():JPanel=panel().apply {
         layout=BoxLayout(this,BoxLayout.Y_AXIS)
-        add(label("ACTIVE ROUTE IS CONTROLLED FROM PROMPT WORKSPACE"));add(Box.createVerticalStrut(8))
-        button(this,"TEST CONNECTION"){val id=provider.selectedItem.toString();runCatching{controller.testProvider(id)}.onSuccess{r->status.text="${if(r.ok)"● READY" else "× FAILED"} $id / ${r.message} / ${r.latencyMs}ms"}.onFailure(::showError)}
-        val customUrl=JTextField("http://127.0.0.1:4000/v1");val customEnv=JTextField("CUSTOM_OPENAI_API_KEY");add(label("CUSTOM OPENAI-COMPATIBLE BASE URL"));add(customUrl);add(label("CUSTOM KEY ENV NAME"));add(customEnv);button(this,"REGISTER CUSTOM ROUTE"){runCatching{controller.configureCustomProvider(customUrl.text.trim(),customEnv.text.trim())}.onSuccess{provider.selectedItem="custom"}.onFailure(::showError)}
-        add(Box.createVerticalStrut(13));add(label("MODEL CAPABILITIES"));capabilityLabel.background=Color(0x0D,0x0D,0x0B);capabilityLabel.foreground=OffworldTheme.muted;capabilityLabel.font=Font(Font.MONOSPACED,Font.PLAIN,10);add(JScrollPane(capabilityLabel));model.addActionListener{refreshCapabilities()};refreshCapabilities()
-        val reduced=JCheckBox("REDUCED MOTION",state.get().reducedMotion).apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground;addActionListener{state.update{it.copy(reducedMotion=isSelected,message="APPEARANCE / REDUCED MOTION ${if(isSelected)"ON" else "OFF"}")}}};add(reduced)
-        listOf("NEW LOCAL PROJECT" to {chooseProject(true)},"OPEN PROJECT" to {chooseProject(false)},"IMPORT IMAGE" to {chooseImage()},"PASTE IMAGE" to {runCatching{controller.importClipboardImage()}.onFailure(::showError)},"MASK EDITOR" to {openMask()},"SMART SALIENCY MASK" to {runCatching{controller.smartSaliencyMask()}.onFailure(::showError)},"ROTATE 90°" to {runCatching{controller.rotateCurrent(true)}.onFailure(::showError)},"FLIP HORIZONTAL" to {runCatching{controller.flipCurrent(true)}.onFailure(::showError)},"CROP…" to {cropDialog()},"GENERATE" to {generate(false)},"EDIT CURRENT" to {generate(true)},"EXPORT HTML REPORT" to {runCatching{controller.exportReport()}.onSuccess{status.text="REPORT ${it.toAbsolutePath()}"}.onFailure(::showError)},"EXPORT DIAGNOSTICS" to {runCatching{controller.exportDiagnostics()}.onSuccess{status.text="DIAGNOSTICS ${it.toAbsolutePath()}"}.onFailure(::showError)},"DOCUMENTATION / HYPER INDEX" to {val p=Path.of("docs/AGENT_USER_README.html").toAbsolutePath();if(Files.exists(p))Desktop.getDesktop().browse(p.toUri()) else showError(IllegalStateException("Documentation not found: $p"))},"FIT / RESET VIEW" to {controller.resetView()}).forEach{(text,fn)->button(this,text){fn()}}
+        add(label("PROVIDER ROUTE"));add(Box.createVerticalStrut(8))
+        button(this,"TEST CONNECTION"){val id=provider.selectedItem.toString();runCatching{controller.testProvider(id)}.onSuccess{r->status.text=(if(r.ok)"● READY" else "× FAILED")+" "+id+" / "+r.message+" / "+r.latencyMs+"ms"}.onFailure(::showError)}
+        val customUrl=JTextField("http://127.0.0.1:4000/v1");val customEnv=JTextField("CUSTOM_OPENAI_API_KEY")
+        add(label("CUSTOM OPENAI-COMPATIBLE BASE URL"));add(customUrl);add(label("CUSTOM KEY ENV NAME"));add(customEnv)
+        button(this,"REGISTER CUSTOM ROUTE"){runCatching{controller.configureCustomProvider(customUrl.text.trim(),customEnv.text.trim())}.onSuccess{provider.selectedItem="custom"}.onFailure(::showError)}
+
+        add(Box.createVerticalStrut(13));add(label("MODEL CAPABILITIES"))
+        capabilityLabel.background=Color(0x0D,0x0D,0x0B);capabilityLabel.foreground=OffworldTheme.muted;capabilityLabel.font=Font(Font.MONOSPACED,Font.PLAIN,10)
+        add(JScrollPane(capabilityLabel));model.addActionListener{refreshCapabilities()};refreshCapabilities()
+
+        add(Box.createVerticalStrut(13));add(label("OFFWORLD APPEARANCE / DARK ONLY"))
+        add(maskVisible);add(label("MASK OVERLAY COLOR  #RRGGBB"));add(maskColor);add(label("MASK OVERLAY OPACITY %"));add(maskOpacity)
+        add(reducedMotion);add(label("MOTION LEVEL"));add(motionLevel);add(label("UI DENSITY"));add(uiDensity)
+        button(this,"APPLY APPEARANCE"){runCatching{
+            controller.setMaskVisible(maskVisible.isSelected)
+            controller.setMaskOverlayStyle(maskColor.text,(maskOpacity.value as Number).toDouble()/100.0)
+            controller.setAppearance(reducedMotion.isSelected,motionLevel.selectedItem.toString(),uiDensity.selectedItem.toString())
+        }.onFailure(::showError)}
+
+        add(Box.createVerticalStrut(13));add(label("PROJECT / EDITOR ACTIONS"))
+        listOf(
+            "NEW LOCAL PROJECT" to {chooseProject(true)},
+            "OPEN PROJECT" to {chooseProject(false)},
+            "IMPORT IMAGE" to {chooseImage()},
+            "ADD REFERENCE" to {chooseReference()},
+            "PASTE IMAGE" to {runCatching{controller.importClipboardImage()}.onFailure(::showError)},
+            "MASK EDITOR" to {openMask()},
+            "SMART SUBJECT MASK" to {runCatching{controller.smartSaliencyMask()}.onFailure(::showError)},
+            "ROTATE 90°" to {runCatching{controller.rotateCurrent(true)}.onFailure(::showError)},
+            "FLIP HORIZONTAL" to {runCatching{controller.flipCurrent(true)}.onFailure(::showError)},
+            "CROP…" to {cropDialog()},
+            "RESIZE…" to {resizeDialog()},
+            "UPSCALE…" to {upscaleDialog()},
+            "RUN SELECTED WORKFLOW" to {runSelectedWorkflow()},
+            "EXPORT CURRENT IMAGE" to {exportCurrentImage()},
+            "EXPORT HTML REPORT" to {runCatching{controller.exportReport()}.onSuccess{status.text="REPORT "+it.toAbsolutePath()}.onFailure(::showError)},
+            "EXPORT DIAGNOSTICS" to {runCatching{controller.exportDiagnostics()}.onSuccess{status.text="DIAGNOSTICS "+it.toAbsolutePath()}.onFailure(::showError)},
+            "DOCUMENTATION / HYPER INDEX" to {val p=Path.of("docs/AGENT_USER_README.html").toAbsolutePath();if(Files.exists(p))Desktop.getDesktop().browse(p.toUri()) else showError(IllegalStateException("Documentation not found: "+p))},
+            "FIT / RESET VIEW" to {controller.resetView()}
+        ).forEach{(text,fn)->button(this,text){fn()}}
     }
 
     fun openCommandPalette(){
