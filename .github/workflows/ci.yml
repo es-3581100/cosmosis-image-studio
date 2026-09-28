@@ -1,0 +1,32 @@
+name: Cosmosis CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'recovery/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+      - name: Deterministic core smoke
+        run: ./scripts/core-smoke.sh
+      - name: Static provenance and Offworld audit
+        run: ./scripts/static-audit.sh
+      - name: Dependency-resolved tests and acceptance
+        run: gradle --no-daemon test acceptanceSmoke --stacktrace
