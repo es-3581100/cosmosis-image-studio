@@ -86,16 +86,16 @@ class CoreBehaviorTest {
             "#!/bin/sh",
             "out=\"\"",
             "in=\"\"",
-            "while [ \"\\$#\" -gt 0 ]; do",
-            "  case \"\\$1\" in",
-            "    --input) shift; in=\"\\$1\" ;;",
-            "    --output) shift; out=\"\\$1\" ;;",
+            "while [ \"\$#\" -gt 0 ]; do",
+            "  case \"\$1\" in",
+            "    --input) shift; in=\"\$1\" ;;",
+            "    --output) shift; out=\"\$1\" ;;",
             "    --capability) shift ;;",
             "    --option) shift ;;",
             "  esac",
             "  shift",
             "done",
-            "cp \"\\$in\" \"\\$out\"",
+            "cp \"\$in\" \"\$out\"",
             "echo \"api_key=supersecret runner-ok\""
         ).joinToString("\n")+"\n")
         val perms=Files.getPosixFilePermissions(runner).toMutableSet()
