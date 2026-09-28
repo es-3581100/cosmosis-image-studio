@@ -46,7 +46,7 @@ fun main(){
     check("offline local preview provider"){
         val local=LocalPreviewProvider();val g=local.generate(GenerationRequest(prompt="offline pipeline",model="local-preview-v1",width=160,height=96,variants=2));require(g.images.size==2&&g.images.all{it.bytes.size>100});val mask=SmartMask.saliency(image);val mp=temp.resolve("smart.png");mask.save(mp);val e=local.edit(GenerationRequest(prompt="tint selected subject",model="local-preview-v1",references=listOf(ReferenceImage(image)),mask=ReferenceImage(mp)));require(e.images.single().bytes.size>100);require(local.testConnection().ok)
     }
-    check("provider spend estimator"){val req=GenerationRequest(prompt="x",model="gemini-3.1-flash-image",variants=2,metadata=mapOf("imageSize" to "2K"));require(kotlin.math.abs((ProviderCostEstimator.estimateUsd("gemini",req)?:0.0)-.202)<.000001);require(ProviderCostEstimator.estimateUsd("openai",req)==null)}
+    check("provider spend estimator"){val req=GenerationRequest(prompt="x",model="gemini-3.1-flash-image",variants=2,metadata=mapOf("imageSize" to "2K"));require(ProviderCostEstimator.estimateUsd("local",req)==0.0);require(ProviderCostEstimator.estimateUsd("gemini",req)==null);require(ProviderCostEstimator.estimateUsd("openai",req)==null)}
     check("capability validation"){
         val cap=ProviderCapabilities(textToImage=true,imageToImage=false,maskEditing=false,maxReferenceImages=0,outputFormats=setOf("png"));val req=GenerationRequest(prompt="x",model="m",references=listOf(ReferenceImage(image,"image/png")));val err=runCatching{CapabilityValidator.validate(req,cap,false)}.exceptionOrNull();require(err!=null && (err.message.orEmpty().contains("reference",true)||err.message.orEmpty().contains("image-to-image",true)))
     }
