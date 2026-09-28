@@ -109,6 +109,34 @@ class CoreBehaviorTest {
         assertContains(result.message,"[REDACTED]")
     }
 
+    @Test fun processOrmlDiscoveryRequiresProtocolCapabilityHandshake(){
+        if(System.getProperty("os.name").lowercase().contains("win"))return
+        val dir=Files.createTempDirectory("cosmosis-probe")
+        val runner=dir.resolve("runner.sh")
+        Files.writeString(runner,listOf(
+            "#!/bin/sh",
+            "if [ \"\$1\" = \"--describe\" ]; then",
+            "  echo '{\"protocolVersion\":\"1\",\"capabilities\":[{\"id\":\"smart-subject-mask\",\"available\":true,\"output\":\"image_mask\"}],\"errors\":[]}'",
+            "  exit 0",
+            "fi",
+            "exit 9"
+        ).joinToString("\n")+"\n")
+        val perms=Files.getPosixFilePermissions(runner).toMutableSet()
+        perms+=java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE
+        Files.setPosixFilePermissions(runner,perms)
+        val discovered=ProcessOrmlAdapters.discover(mapOf("COSMOSIS_ORML_U2NET_RUNNER" to runner.toString()))
+        assertEquals(1,discovered.adapters.size)
+        assertTrue(discovered.errors.isEmpty())
+
+        Files.writeString(runner,listOf(
+            "#!/bin/sh",
+            "echo '{\"protocolVersion\":\"1\",\"capabilities\":[{\"id\":\"smart-subject-mask\",\"available\":false,\"output\":\"image_mask\"}],\"errors\":[]}'"
+        ).joinToString("\n")+"\n")
+        val rejected=ProcessOrmlAdapters.discover(mapOf("COSMOSIS_ORML_U2NET_RUNNER" to runner.toString()))
+        assertTrue(rejected.adapters.isEmpty())
+        assertTrue(rejected.errors.any{it.contains("does not report")})
+    }
+
     @Test fun processOrmlDiscoveryRejectsMissingExecutable(){
         val env=mapOf("COSMOSIS_ORML_U2NET_RUNNER" to "/definitely/not/a/cosmosis-runner")
         val discovery=ProcessOrmlAdapters.discover(env)
