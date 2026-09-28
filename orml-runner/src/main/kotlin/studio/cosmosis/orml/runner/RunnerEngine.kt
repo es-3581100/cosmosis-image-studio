@@ -1,6 +1,7 @@
 package studio.cosmosis.orml.runner
 
 import java.nio.file.Files
+import javax.imageio.ImageIO
 
 class RunnerEngine(
     backends:Collection<OrmlRunnerBackend>,
@@ -45,9 +46,22 @@ class RunnerEngine(
         val spec=CapabilityRegistry.find(request.capabilityId)!!
         if(!Files.isRegularFile(request.output))return RunnerResult(false,"backend reported success without output file")
         if(Files.size(request.output)<=0)return RunnerResult(false,"backend reported success with empty output file")
-        if(spec.outputKind==OutputKind.JSON){
-            val head=runCatching{Files.readString(request.output)}.getOrNull()?.trim().orEmpty()
-            if(!(head.startsWith("{")||head.startsWith("[")))return RunnerResult(false,"embedding output is not JSON")
+        when(spec.outputKind){
+            OutputKind.JSON -> {
+                val head=runCatching{Files.readString(request.output)}.getOrNull()?.trim().orEmpty()
+                if(!(head.startsWith("{")||head.startsWith("[")))return RunnerResult(false,"embedding output is not JSON")
+            }
+            OutputKind.IMAGE,OutputKind.IMAGE_MASK -> {
+                val outputImage=runCatching{ImageIO.read(request.output.toFile())}.getOrNull()
+                    ?:return RunnerResult(false,"backend output is not a decodable image")
+                if(outputImage.width<=0||outputImage.height<=0)return RunnerResult(false,"backend output image has invalid dimensions")
+                if(spec.outputKind==OutputKind.IMAGE_MASK){
+                    val inputImage=runCatching{ImageIO.read(request.input.toFile())}.getOrNull()
+                        ?:return RunnerResult(false,"mask capability input is not a decodable image")
+                    if(outputImage.width!=inputImage.width||outputImage.height!=inputImage.height)
+                        return RunnerResult(false,"mask output dimensions must match input image")
+                }
+            }
         }
         return result.copy(
             message=sanitize(result.message),
