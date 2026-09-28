@@ -1,5 +1,6 @@
 package studio.cosmosis.orml
 
+import studio.cosmosis.security.Redaction
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -59,7 +60,7 @@ class ProcessOrmlAdapter(
                 process.destroyForcibly()
                 return OrmlResult(capabilityId,false,message="ORML runner timed out after "+timeout+"s")
             }
-            val log=process.inputStream.bufferedReader().use{it.readText()}.replace(Regex("[\\r\\n]+")," ").take(500)
+            val log=Redaction.sanitize(process.inputStream.bufferedReader().use{it.readText()}).replace(Regex("[\\r\\n]+")," ").take(500)
             if(process.exitValue()!=0)return OrmlResult(capabilityId,false,message="ORML runner exited "+process.exitValue()+if(log.isBlank())"" else ": "+log)
             if(descriptor.outputs.any{it=="image"||it.contains("mask",true)} && !Files.isRegularFile(output))
                 return OrmlResult(capabilityId,false,message="ORML runner completed without required output file")
