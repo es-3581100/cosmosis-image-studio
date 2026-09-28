@@ -24,6 +24,8 @@ Upstream ORML U2Net moves pixels through OPENRNDR GPU buffers. The Cosmosis runn
 
 Preprocessing follows the upstream source: resize to 320×320, RGB float channels, scale by 2.0, then offset by -1.0.
 
+Upstream ORML also performs vertical flips when moving between OPENRNDR GPU coordinates and TensorFlow and flips the matte back on output. This backend stays entirely in conventional top-down CPU image coordinates, so those two compensating GPU-orientation transforms are intentionally absent. Native verification remains authoritative for behavioral equivalence.
+
 The sigmoid matte is converted to an 8-bit grayscale PNG and resized back to the source dimensions. The runner independently verifies that the mask is decodable and exactly matches source dimensions.
 
 ## Runtime prerequisites
