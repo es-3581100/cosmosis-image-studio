@@ -12,6 +12,8 @@ import studio.cosmosis.security.Redaction
 import studio.cosmosis.storage.SqliteStore
 import studio.cosmosis.workers.JobEngine
 import java.nio.file.Files
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
 
 class CoreBehaviorTest {
     @Test fun promptCopyKeepsProvenanceAndCreatesRevision(){
@@ -74,6 +76,38 @@ class CoreBehaviorTest {
         val rejected=OrmlExecutor(listOf(bad)).invoke(OrmlInvocation(capabilityId,input.toString()))
         assertFalse(rejected.ok);assertContains(rejected.message,"missing output")
     }
+    @Test fun desktopProcessAdapterInteroperatesWithExecutableRunner(){
+        if(System.getProperty("os.name").lowercase().contains("win"))return
+        val dir=Files.createTempDirectory("cosmosis orml runner ")
+        val input=dir.resolve("input image.png")
+        ImageIO.write(BufferedImage(20,14,BufferedImage.TYPE_INT_RGB),"png",input.toFile())
+        val runner=dir.resolve("fake runner.sh")
+        Files.writeString(runner,"""#!/bin/sh
+out=""
+in=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --input) shift; in="$1" ;;
+    --output) shift; out="$1" ;;
+    --capability) shift ;;
+    --option) shift ;;
+  esac
+  shift
+done
+cp "$in" "$out"
+echo "api_key=supersecret runner-ok"
+""")
+        val perms=Files.getPosixFilePermissions(runner).toMutableSet()
+        perms+=java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE
+        Files.setPosixFilePermissions(runner,perms)
+        val adapter=ProcessOrmlAdapter("smart-subject-mask",runner,5)
+        val result=adapter.invoke(OrmlInvocation("smart-subject-mask",input.toString(),mapOf("outputDir" to dir.toString(),"outputFormat" to "png")))
+        assertTrue(result.ok,result.message)
+        assertTrue(result.outputPaths.single().let{Files.isRegularFile(java.nio.file.Path.of(it))})
+        assertFalse(result.message.contains("supersecret"))
+        assertContains(result.message,"[REDACTED]")
+    }
+
     @Test fun processOrmlDiscoveryRejectsMissingExecutable(){
         val env=mapOf("COSMOSIS_ORML_U2NET_RUNNER" to "/definitely/not/a/cosmosis-runner")
         val discovery=ProcessOrmlAdapters.discover(env)
