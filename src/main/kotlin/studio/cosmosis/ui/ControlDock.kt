@@ -248,18 +248,36 @@ class ControlDock(private val controller:StudioController,private val state:Stud
 
     private fun runAgentBuildDialog(){
         val intent=JOptionPane.showInputDialog(this,"Describe the bounded image task","Agent Build",JOptionPane.PLAIN_MESSAGE)?.trim().orEmpty();if(intent.isBlank())return
-        val selectedVariants=(variants.value as Number).toInt().coerceAtMost(4)
         val modelId=model.editor.item?.toString()?.trim().orEmpty();if(modelId.isBlank())return showError(IllegalArgumentException("Select a model before Agent Build"))
-        val budget=JobBudget(maxGenerations=selectedVariants,maxRetries=1,maxParallelWorkers=2,timeoutSeconds=180)
+        val generations=JSpinner(SpinnerNumberModel((variants.value as Number).toInt().coerceIn(1,4),1,4,1))
+        val retries=JSpinner(SpinnerNumberModel(1,0,5,1));val parallel=JSpinner(SpinnerNumberModel(2,1,4,1));val timeout=JSpinner(SpinnerNumberModel(180,10,3600,10))
+        val maxSpend=JTextField(if(provider.selectedItem.toString()=="local")"0.00" else "")
+        val fallback=JComboBox(arrayOf("fail-closed","same-provider-retry"))
+        val form=JPanel(GridLayout(0,2,8,8)).apply{
+            add(label("MAX GENERATIONS"));add(generations);add(label("MAX RETRIES"));add(retries)
+            add(label("MAX PARALLEL WORKERS"));add(parallel);add(label("TIMEOUT SECONDS"));add(timeout)
+            add(label("MAX PROVIDER SPEND USD"));add(maxSpend);add(label("FALLBACK POLICY"));add(fallback)
+        }
+        if(JOptionPane.showConfirmDialog(this,form,"AGENT BUILD / BUDGET",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return
+        val spend=maxSpend.text.trim().takeIf{it.isNotBlank()}?.toDoubleOrNull()
+        if(maxSpend.text.isNotBlank()&&(spend==null||spend<0.0))return showError(IllegalArgumentException("Max provider spend must be a non-negative USD amount or blank"))
+        val selectedVariants=(generations.value as Number).toInt()
+        val budget=JobBudget(
+            maxGenerations=selectedVariants,maxRetries=(retries.value as Number).toInt(),
+            maxParallelWorkers=(parallel.value as Number).toInt(),maxProviderSpendUsd=spend,
+            timeoutSeconds=(timeout.value as Number).toLong(),fallbackPolicy=fallback.selectedItem.toString()
+        )
         val plan=runCatching{controller.planAgentBuild(intent,budget)}.getOrElse{return showError(it)}
-        val summary="""$plan
-
-ROUTE  ${provider.selectedItem} / $modelId
-BOUND  generations=$selectedVariants retries=1 parallel=2 timeout=180s
-
-Run this bounded plan?""".trimIndent()
+        val summary=buildString{
+            appendLine(plan);appendLine()
+            appendLine("ROUTE  "+provider.selectedItem+" / "+modelId)
+            appendLine("BOUND  generations="+budget.maxGenerations+" retries="+budget.maxRetries+" parallel="+budget.maxParallelWorkers+" timeout="+budget.timeoutSeconds+"s")
+            appendLine("SPEND  "+(budget.maxProviderSpendUsd?.let{"USD "+String.format("%.2f",it)}?:"not capped"))
+            appendLine("FALLBACK  "+budget.fallbackPolicy)
+            appendLine();append("Run this bounded plan?")
+        }
         if(JOptionPane.showConfirmDialog(this,summary,"COSMOSIS / AGENT BUILD",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return
-        runCatching{controller.runAgentBuild(intent,provider.selectedItem.toString(),modelId,selectedVariants,budget)}.onSuccess{id->status.text="AGENT BUILD / $id / QUEUED"}.onFailure(::showError)
+        runCatching{controller.runAgentBuild(intent,provider.selectedItem.toString(),modelId,selectedVariants,budget)}.onSuccess{id->status.text="AGENT BUILD / "+id+" / QUEUED"}.onFailure(::showError)
     }
 
     private fun refreshModels(){val id=provider.selectedItem?.toString()?:return;val current=model.editor.item?.toString();val defs=runCatching{controller.modelsFor(id)}.getOrDefault(emptyList());model.removeAllItems();defs.forEach{model.addItem(it.id)};if(current!=null&&defs.none{it.id==current})model.editor.item=current else if(model.itemCount>0)model.selectedIndex=0;refreshCapabilities()}
