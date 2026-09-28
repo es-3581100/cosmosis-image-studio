@@ -34,15 +34,7 @@ open class OpenAiProvider(
         val start=System.nanoTime()
         val content=mutableListOf(JsonUtil.obj("type" to JsonUtil.quote("input_text"),"text" to JsonUtil.quote(request.prompt)))
         request.references.forEach { content += JsonUtil.obj("type" to JsonUtil.quote("input_image"),"image_url" to JsonUtil.quote(http.dataUri(it))) }
-        val size=if(request.width!=null&&request.height!=null)"${request.width}x${request.height}" else request.metadata["size"]?:"auto"
-        val tool=JsonUtil.obj(
-            "type" to JsonUtil.quote("image_generation"),"model" to JsonUtil.quote(request.model),
-            "action" to JsonUtil.quote(if(request.references.isEmpty())"generate" else "auto"),
-            "quality" to request.quality?.let(JsonUtil::quote),"size" to JsonUtil.quote(size),
-            "background" to JsonUtil.quote(if(request.transparent)"transparent" else "auto"),
-            "output_format" to JsonUtil.quote(request.outputFormat),
-            "output_compression" to request.metadata["compression"]
-        )
+        val tool=OpenAiWire.responsesImageTool(request)
         val reasoningModel=request.metadata["reasoningModel"]?.takeIf{it.isNotBlank()} ?: System.getenv("OPENAI_RESPONSES_MODEL")?.takeIf{it.isNotBlank()} ?: error("OpenAI Responses workflow requires reasoningModel metadata or OPENAI_RESPONSES_MODEL")
         val body=JsonUtil.obj("model" to JsonUtil.quote(reasoningModel),"input" to JsonUtil.arr(listOf(JsonUtil.obj("role" to JsonUtil.quote("user"),"content" to JsonUtil.arr(content)))),"tools" to JsonUtil.arr(listOf(tool)),"previous_response_id" to request.previousResponseId?.let(JsonUtil::quote))
         val(code,json)=http.json("POST","$baseUrl/responses",headers(),body); if(code !in 200..299) error("OpenAI Responses image HTTP $code: ${json.take(800)}")
