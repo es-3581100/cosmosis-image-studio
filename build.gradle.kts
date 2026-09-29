@@ -11,6 +11,7 @@ repositories { mavenCentral() }
 val lwjglVersion = "3.4.3"
 val osName = System.getProperty("os.name").lowercase()
 val osArch = System.getProperty("os.arch").lowercase()
+val uiSmokeGlfw = providers.gradleProperty("cosmosisUiSmokeGlfw").map(String::toBoolean).orElse(false)
 val lwjglNatives = when {
     "mac" in osName && ("aarch64" in osArch || "arm64" in osArch) -> "natives-macos-arm64"
     "mac" in osName -> "natives-macos"
@@ -25,6 +26,9 @@ dependencies {
     implementation("org.openrndr:openrndr-application:0.5.0")
     runtimeOnly("org.openrndr:openrndr-gl3-jvm:0.5.0")
     runtimeOnly("org.openrndr:openrndr-application-sdl:0.5.0")
+    if (uiSmokeGlfw.get()) {
+        runtimeOnly("org.openrndr:openrndr-application-glfw:0.5.0")
+    }
     listOf("lwjgl","lwjgl-sdl","lwjgl-glfw","lwjgl-opengl","lwjgl-opengles","lwjgl-jemalloc","lwjgl-stb","lwjgl-tinyexr").forEach {
         runtimeOnly("org.lwjgl:$it:$lwjglVersion:$lwjglNatives")
     }
@@ -39,6 +43,12 @@ dependencies {
 kotlin { jvmToolchain(21) }
 
 application { mainClass.set("studio.cosmosis.AppKt") }
+
+tasks.named<JavaExec>("run") {
+    if (uiSmokeGlfw.get()) {
+        systemProperty("org.openrndr.application", "GLFW")
+    }
+}
 
 tasks.test { useJUnitPlatform() }
 
