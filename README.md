@@ -142,7 +142,7 @@ Real inference is opt-in:
 COSMOSIS_CLASSIFIER_NATIVE_TESTS=1 bash scripts/classifier-native-smoke.sh input.png
 ```
 
-Ordinary CI proves packaging and fail-closed readiness only. Native classifier execution is not marked VERIFIED until the manual workflow produces valid embedding JSON and passes desktop `ormlImageEmbedding()` admission through `acceptanceSmoke`.
+Native classifier execution is verified on Linux x86_64 with TensorFlow Java 0.4.1. [Workflow run 36640311752](https://github.com/es-3581100/cosmosis-image-studio/actions/runs/36640311752) verified the pinned model identity, readiness, real classification/embedding JSON, runner admission, and desktop `ormlImageEmbedding()` through `acceptanceSmoke`. See [the verification checkpoint](docs/verification/classifier-native-2026-09-29.md). Ordinary CI remains packaging/fail-closed only; macOS, Windows, and GPU execution remain unverified.
 
 
 ### Pinned FALSR-A Super Resolution backend
