@@ -90,6 +90,27 @@ Native verification has passed on the GitHub Linux x86_64 runner with TensorFlow
 This is a platform-scoped verification claim: macOS and Windows native classifiers remain unverified until the same native workflow is run successfully there.
 
 
+### Pinned BodyPix backend
+
+The optional `orml-runner-bodypix` distribution implements only the workstation's `person-body-mask` surface. It is grounded in the MobileNet BodyPix graph from the same pinned ORML commit, model `bodypix-mobilenet-1.0`, model SHA-256 `c64d6f3252217f9bd0ba790ac2a6ac8b45fc002767c97379cb2e8a3ce7317b56`, and TensorFlow Java 0.4.1 lineage.
+
+```bash
+./gradlew :orml-runner-bodypix:test
+./gradlew :orml-runner-bodypix:installDist
+./gradlew :orml-runner-bodypix:installDist -PcosmosisBodyPixTensorFlow=true
+MODEL_PATH="$(bash scripts/fetch-bodypix-model.sh)"
+export COSMOSIS_ORML_BODYPIX_MODEL="$MODEL_PATH"
+```
+
+The default segmentation threshold is `0.7` and the default internal resolution is `0.5`; both can be supplied as runner options. Ordinary CI proves the backend stays fail-closed without its pinned model/native runtime. Real inference is opt-in:
+
+```bash
+COSMOSIS_BODYPIX_NATIVE_TESTS=1 bash scripts/bodypix-native-smoke.sh input.png
+```
+
+Native BodyPix execution is not yet claimed verified. The manual `BodyPix Native Verification` workflow must pass real inference plus Cosmosis desktop `ormlPersonMask()` admission before that status is promoted.
+
+
 ## Offline verification
 
 The dependency-light domain can be exercised without Gradle/network:
