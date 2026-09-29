@@ -145,6 +145,38 @@ COSMOSIS_CLASSIFIER_NATIVE_TESTS=1 bash scripts/classifier-native-smoke.sh input
 Ordinary CI proves packaging and fail-closed readiness only. Native classifier execution is not marked VERIFIED until the manual workflow produces valid embedding JSON and passes desktop `ormlImageEmbedding()` admission through `acceptanceSmoke`.
 
 
+### Pinned FALSR-A Super Resolution backend
+
+The optional `orml-runner-super-resolution` distribution implements `super-resolution` from the FALSR-A graph pinned by ORML:
+
+```text
+model:            FALSR-A-1.0
+model SHA-256:    639cd2ea510990fa58855a7a15bd1ea0d8756b6e6ffe7a980d0427f61f2fb4a1
+TensorFlow Java:  0.4.1
+graph scale:      2× per octave
+```
+
+The backend independently reproduces ORML's Y/Pb/Pr preprocessing and nearest-neighbor 2× chroma preparation without requiring an OPENGL context.
+
+```bash
+./gradlew :orml-runner-super-resolution:test
+./gradlew :orml-runner-super-resolution:installDist
+./gradlew :orml-runner-super-resolution:installDist -PcosmosisSuperResolutionTensorFlow=true
+MODEL_PATH="$(bash scripts/fetch-super-resolution-model.sh)"
+export COSMOSIS_ORML_SUPER_RESOLUTION_MODEL="$MODEL_PATH"
+```
+
+The normal editor path uses one octave (2×). The runner permits up to three octaves while enforcing both an 8192-pixel side bound and a 16,777,216-pixel neural output budget.
+
+Real inference is opt-in:
+
+```bash
+COSMOSIS_SUPER_RESOLUTION_NATIVE_TESTS=1 bash scripts/super-resolution-native-smoke.sh input.png
+```
+
+Ordinary CI proves packaging and fail-closed readiness only. Native FALSR execution is not marked VERIFIED until the manual workflow produces a valid 2× PNG and Cosmosis admits it through `ormlSuperResolution()` as an UPSCALE child version.
+
+
 ## Offline verification
 
 The dependency-light domain can be exercised without Gradle/network:
