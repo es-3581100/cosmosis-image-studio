@@ -56,4 +56,4 @@ Real FALSR inference is opt-in:
 COSMOSIS_SUPER_RESOLUTION_NATIVE_TESTS=1 bash scripts/super-resolution-native-smoke.sh input.png
 ```
 
-Do not mark this backend VERIFIED until real inference produces a valid 2× PNG and Cosmosis admits it through `ormlSuperResolution()` as a non-destructive UPSCALE child version.
+Native verified on Linux x86_64 / TensorFlow Java 0.4.1: workflow run `36640856920`, job `109652521802`, produced a valid 2× PNG and passed desktop `ormlSuperResolution()` non-destructive UPSCALE admission. See [evidence and limitations](../docs/verification/super-resolution-native-2026-09-29.md). Other platforms, GPU, recursive native octaves, maximum-size workloads, and perceptual quality remain outside this verification.
