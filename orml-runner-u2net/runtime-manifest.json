@@ -34,8 +34,8 @@
   "preprocessing": {
     "resize": "bilinear",
     "channelOrder": "RGB",
-    "scale": 2.0,
-    "offset": -1.0
+    "scale": 2,
+    "offset": -1
   },
   "output": {
     "format": "png",
@@ -43,8 +43,25 @@
     "mustMatchInputDimensions": true
   },
   "nativeVerification": {
-    "ordinaryCi": "fail-closed readiness only",
+    "ordinaryCi": "fail-closed readiness",
     "optInEnv": "COSMOSIS_U2NET_NATIVE_TESTS=1",
-    "requiredBeforeVerified": true
+    "status": "verified-linux-x86_64",
+    "verifiedAt": "2026-09-29T18:30:27Z",
+    "workflowRunId": "36612354676",
+    "workflowJobId": "109556690533",
+    "verifiedPlatform": "ubuntu-latest / Linux x86_64",
+    "tensorflowJavaVersion": "0.4.1",
+    "evidence": [
+      "distribution-build",
+      "model-sha256",
+      "protocol-v1-ready",
+      "real-u2net-inference",
+      "validated-mask-output",
+      "desktop-acceptance-smoke"
+    ],
+    "unverifiedPlatforms": [
+      "macosx-x86_64",
+      "windows-x86_64"
+    ]
   }
 }
