@@ -46,7 +46,18 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           command -v xvfb-run
-          xvfb-run -a -s "-screen 0 2600x1200x24" gradle --no-daemon run
+          mkdir -p build/ui-smoke
+          set +e
+          timeout --signal=TERM --kill-after=10s 75s \
+            xvfb-run -a -s "-screen 0 2600x1200x24" \
+            gradle --no-daemon run > build/ui-smoke/runtime.log 2>&1
+          code=$?
+          set -e
+          cat build/ui-smoke/runtime.log
+          if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
+            printf 'UI_SMOKE_FAIL\nerror=runtime-timeout\nexit=%s\n' "$code" > build/ui-smoke/report.txt
+          fi
+          test "$code" -eq 0
           grep -F "UI_SMOKE_PASS" build/ui-smoke/report.txt
           grep -F "theme.background=#10100E" build/ui-smoke/report.txt
           grep -F "theme.foreground=#FFFFE3" build/ui-smoke/report.txt
