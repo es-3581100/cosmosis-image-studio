@@ -37,6 +37,12 @@ fun main() {
         val prompt=studio.savePrompt("Acceptance prompt",extracted,"MY PROMPTS/Acceptance")
         val mask=studio.smartSaliencyMask()
         require(Files.size(mask)>0)
+        if(!System.getenv("COSMOSIS_ORML_BODYPIX_RUNNER").isNullOrBlank()){
+            val personMask=studio.ormlPersonMask()
+            require(Files.size(personMask)>0)
+            require(state.get().maskPath==personMask.toString())
+            require(Files.isRegularFile(personMask))
+        }
         studio.setMaskVisible(false);require(!state.get().maskVisible);studio.setMaskVisible(true)
 
         studio.generate(
