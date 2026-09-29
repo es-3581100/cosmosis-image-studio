@@ -2,6 +2,9 @@ name: BodyPix Native Verification
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'verify/bodypix-native'
 
 permissions:
   contents: read
