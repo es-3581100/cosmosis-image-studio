@@ -14,5 +14,9 @@ fun main(){
     SwingUtilities.invokeAndWait{dock=ControlDock(controller,state)}
     Runtime.getRuntime().addShutdownHook(Thread{runCatching{controller.close()}})
     launchWorkspace(state,controller,dock,smoke)
-    if(smoke!=null)runCatching{controller.close()}
+    if(smoke!=null){
+        runCatching{controller.close()}
+        val report=runCatching{java.nio.file.Files.readString(smoke.reportPath)}.getOrElse{"UI_SMOKE_FAIL\nreport.read.error=${it.message}"}
+        check(report.lineSequence().firstOrNull()=="UI_SMOKE_PASS"){report}
+    }
 }
