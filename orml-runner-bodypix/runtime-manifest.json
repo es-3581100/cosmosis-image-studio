@@ -43,8 +43,28 @@
     "mustMatchInputDimensions": true
   },
   "nativeVerification": {
-    "status": "pending",
+    "status": "verified-linux-x86_64",
     "ordinaryCi": "fail-closed readiness",
-    "optInEnv": "COSMOSIS_BODYPIX_NATIVE_TESTS=1"
+    "optInEnv": "COSMOSIS_BODYPIX_NATIVE_TESTS=1",
+    "verifiedAt": "2026-09-29T18:48:42Z",
+    "workflowRunId": "36614548554",
+    "workflowJobId": "109564100791",
+    "verifiedPlatform": "ubuntu-latest / Linux x86_64",
+    "tensorflowJavaVersion": "0.4.1",
+    "evidence": [
+      "distribution-build",
+      "model-sha256",
+      "protocol-v1-ready",
+      "real-bodypix-inference",
+      "validated-person-mask-output",
+      "desktop-ormlPersonMask-acceptance"
+    ],
+    "unverifiedPlatforms": [
+      "macosx-x86_64",
+      "windows-x86_64"
+    ],
+    "unverifiedVariants": [
+      "gpu"
+    ]
   }
 }

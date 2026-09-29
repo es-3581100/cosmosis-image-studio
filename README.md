@@ -108,7 +108,9 @@ The default segmentation threshold is `0.7` and the default internal resolution 
 COSMOSIS_BODYPIX_NATIVE_TESTS=1 bash scripts/bodypix-native-smoke.sh input.png
 ```
 
-Native BodyPix execution is not yet claimed verified. The manual `BodyPix Native Verification` workflow must pass real inference plus Cosmosis desktop `ormlPersonMask()` admission before that status is promoted.
+Native BodyPix execution is verified on the GitHub Linux x86_64 runner with TensorFlow Java 0.4.1. Workflow run `36614548554` verified the pinned model hash, protocol-v1 READY handshake, real `float_segments` inference, valid same-size person mask output, and Cosmosis desktop `ormlPersonMask()` admission through `acceptanceSmoke`.
+
+This evidence is recorded in `docs/verification/bodypix-native-2026-09-29.md`. The claim is platform-scoped: macOS, Windows, and GPU BodyPix variants remain unverified.
 
 
 ## Offline verification
