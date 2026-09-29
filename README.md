@@ -85,6 +85,10 @@ Then, only when native testing is intentionally enabled:
 COSMOSIS_U2NET_NATIVE_TESTS=1 bash scripts/u2net-native-smoke.sh input.png
 ```
 
+Native verification has passed on the GitHub Linux x86_64 runner with TensorFlow Java 0.4.1. Workflow run `36612354676` verified the pinned model hash, protocol-v1 READY handshake, real U2Net inference, valid mask output, and Cosmosis desktop `acceptanceSmoke` with `COSMOSIS_ORML_U2NET_RUNNER` configured. This evidence is recorded in `docs/verification/u2net-native-2026-09-29.md`.
+
+This is a platform-scoped verification claim: macOS and Windows native classifiers remain unverified until the same native workflow is run successfully there.
+
 
 ## Offline verification
 
