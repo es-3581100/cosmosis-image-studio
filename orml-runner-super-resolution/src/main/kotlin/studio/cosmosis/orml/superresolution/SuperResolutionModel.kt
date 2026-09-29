@@ -17,6 +17,7 @@ object SuperResolutionModelPin {
     const val modelEnv = "COSMOSIS_ORML_SUPER_RESOLUTION_MODEL"
     const val scaleFactor = 2
     const val maxOutputSide = 8192
+    const val maxOutputPixels = 16_777_216L
 
     fun requirePinnedModel(environment:Map<String,String> = System.getenv()):Path {
         val raw=environment[modelEnv]?.trim().orEmpty()
