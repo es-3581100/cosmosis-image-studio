@@ -2,6 +2,8 @@ name: Super Resolution Native Verification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [verify/falsr-native-20260929]
 
 permissions:
   contents: read
