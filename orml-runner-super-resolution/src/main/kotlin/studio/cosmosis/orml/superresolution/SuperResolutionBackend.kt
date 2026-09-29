@@ -31,9 +31,12 @@ class SuperResolutionBackend @JvmOverloads constructor(
         val source=runCatching{ImageIO.read(request.input.toFile())}.getOrNull()
             ?:return RunnerResult(false,"input is not a decodable image")
         val scale=1 shl octaves
-        if(source.width.toLong()*scale>SuperResolutionModelPin.maxOutputSide ||
-            source.height.toLong()*scale>SuperResolutionModelPin.maxOutputSide)
-            return RunnerResult(false,"requested super-resolution output exceeds "+SuperResolutionModelPin.maxOutputSide+" px safety bound")
+        val outputWidth=source.width.toLong()*scale
+        val outputHeight=source.height.toLong()*scale
+        if(outputWidth>SuperResolutionModelPin.maxOutputSide || outputHeight>SuperResolutionModelPin.maxOutputSide)
+            return RunnerResult(false,"requested super-resolution output exceeds "+SuperResolutionModelPin.maxOutputSide+" px side bound")
+        if(outputWidth*outputHeight>SuperResolutionModelPin.maxOutputPixels)
+            return RunnerResult(false,"requested super-resolution output exceeds "+SuperResolutionModelPin.maxOutputPixels+" pixel neural budget")
 
         return runtimeFactory().use{runtime->
             runCatching{
