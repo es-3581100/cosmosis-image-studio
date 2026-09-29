@@ -29,7 +29,7 @@ jobs:
       - name: Static provenance and Offworld audit
         run: ./scripts/static-audit.sh
       - name: Dependency-resolved tests and acceptance
-        run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist :orml-runner-u2net:installDist --stacktrace
+        run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist :orml-runner-u2net:installDist :orml-runner-bodypix:installDist --stacktrace
       - name: ORML runner distribution smoke
         run: |
           RUNNER="orml-runner/build/install/orml-runner/bin/orml-runner"
@@ -47,3 +47,13 @@ jobs:
           grep -F '"protocolVersion":"1"' /tmp/cosmosis-u2net-describe.json
           grep -F '"id":"smart-subject-mask","available":false' /tmp/cosmosis-u2net-describe.json
           grep -F '"errors":[' /tmp/cosmosis-u2net-describe.json
+      - name: BodyPix helper script syntax
+        run: bash -n scripts/fetch-bodypix-model.sh scripts/bodypix-native-smoke.sh
+      - name: BodyPix backend distribution smoke
+        run: |
+          RUNNER="orml-runner-bodypix/build/install/orml-runner-bodypix/bin/orml-runner-bodypix"
+          test -x "$RUNNER"
+          "$RUNNER" --describe > /tmp/cosmosis-bodypix-describe.json
+          grep -F '"protocolVersion":"1"' /tmp/cosmosis-bodypix-describe.json
+          grep -F '"id":"person-body-mask","available":false' /tmp/cosmosis-bodypix-describe.json
+          grep -F '"errors":[' /tmp/cosmosis-bodypix-describe.json
