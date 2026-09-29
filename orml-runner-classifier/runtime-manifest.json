@@ -47,9 +47,21 @@
     "generatedMetadataOnly": true
   },
   "nativeVerification": {
-    "status": "not-yet-verified",
+    "status": "verified-linux-x86_64",
+    "platform": "Linux",
+    "architecture": "x86_64",
+    "javaVersion": "Temurin 21.0.12+1",
+    "tensorflowJavaVersion": "0.4.1",
+    "workflowRun": 36640311752,
+    "workflowJob": 109650773799,
+    "codeCommit": "27832a15602dba0f2013242d8f1f2b74b8c42270",
+    "evidence": "docs/verification/classifier-native-2026-09-29.md",
     "ordinaryCi": "fail-closed readiness",
     "optInEnv": "COSMOSIS_CLASSIFIER_NATIVE_TESTS=1",
-    "requiredBeforeVerified": true
+    "unverifiedPlatforms": [
+      "macosx-x86_64",
+      "windows-x86_64",
+      "GPU"
+    ]
   }
 }

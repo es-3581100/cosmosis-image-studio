@@ -71,4 +71,4 @@ Real inference is opt-in:
 COSMOSIS_CLASSIFIER_NATIVE_TESTS=1 bash scripts/classifier-native-smoke.sh input.png
 ```
 
-Do not mark this backend VERIFIED until real model inference produces valid JSON and Cosmosis admits that JSON through `ormlImageEmbedding()`.
+Native verified on Linux x86_64 / TensorFlow Java 0.4.1: workflow run `36640311752`, job `109650773799`, produced valid classification/embedding JSON and passed desktop `ormlImageEmbedding()` admission. See [evidence and limitations](../docs/verification/classifier-native-2026-09-29.md). macOS, Windows, and GPU execution remain unverified.
