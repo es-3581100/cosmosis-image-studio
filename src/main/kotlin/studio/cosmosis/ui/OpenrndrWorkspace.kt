@@ -43,25 +43,30 @@ private fun near(rgb:Int,target:java.awt.Color,tolerance:Int=14):Boolean {
 private fun sha256(path:Path):String=MessageDigest.getInstance("SHA-256")
     .digest(Files.readAllBytes(path)).joinToString(""){"%02x".format(it)}
 
-private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,frame:Long,workspaceWidth:Int,workspaceHeight:Int){
+private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,frame:Long,workspaceWidth:Int,workspaceHeight:Int):Boolean{
     config.reportPath.parent?.let{Files.createDirectories(it)}
     config.screenshotPath.parent?.let{Files.createDirectories(it)}
+    val errors=mutableListOf<String>()
     val size=Toolkit.getDefaultToolkit().screenSize
-    check(size.width>0&&size.height>0){"Virtual display has invalid dimensions"}
-    check(dock.isShowing){"Swing control dock is not showing"}
-    val capture=Robot().createScreenCapture(Rectangle(size))
-    check(ImageIO.write(capture,"png",config.screenshotPath.toFile())){"Unable to encode UI smoke screenshot"}
-    var dark=0L;var ivory=0L;var sampled=0L
-    for(y in 0 until capture.height step 3)for(x in 0 until capture.width step 3){
-        val rgb=capture.getRGB(x,y);sampled++
-        if(near(rgb,OffworldTheme.background))dark++
-        if(near(rgb,OffworldTheme.foreground))ivory++
-    }
-    check(OffworldTheme.radius==0){"Offworld hard-corner authority regressed"}
-    check(dark>1000){"Offworld warm-dark surface was not visible in captured desktop (count=$dark)"}
-    check(ivory>10){"Offworld ivory foreground was not visible in captured desktop (count=$ivory)"}
+    if(size.width<=0||size.height<=0)errors+="virtual display has invalid dimensions"
+    if(!dock.isShowing)errors+="Swing control dock is not showing"
+    var dark=0L;var ivory=0L;var sampled=0L;var screenshotHash="unavailable"
+    runCatching{
+        val capture=Robot().createScreenCapture(Rectangle(size))
+        if(!ImageIO.write(capture,"png",config.screenshotPath.toFile()))error("Unable to encode UI smoke screenshot")
+        for(y in 0 until capture.height step 3)for(x in 0 until capture.width step 3){
+            val rgb=capture.getRGB(x,y);sampled++
+            if(near(rgb,OffworldTheme.background))dark++
+            if(near(rgb,OffworldTheme.foreground))ivory++
+        }
+        screenshotHash=sha256(config.screenshotPath)
+    }.onFailure{errors+="screenshot: "+(it.message?:it.javaClass.simpleName)}
+    if(OffworldTheme.radius!=0)errors+="Offworld hard-corner authority regressed"
+    if(dark<=1000)errors+="Offworld warm-dark surface not visible enough (count=$dark)"
+    if(ivory<=10)errors+="Offworld ivory foreground not visible enough (count=$ivory)"
+    val passed=errors.isEmpty()
     val report=buildString{
-        appendLine("UI_SMOKE_PASS")
+        appendLine(if(passed)"UI_SMOKE_PASS" else "UI_SMOKE_FAIL")
         appendLine("frame=$frame")
         appendLine("workspace=${workspaceWidth}x$workspaceHeight")
         appendLine("desktop=${size.width}x${size.height}")
@@ -73,9 +78,11 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
         appendLine("warmDarkPixels=$dark")
         appendLine("ivoryPixels=$ivory")
         appendLine("screenshot=${config.screenshotPath}")
-        appendLine("screenshot.sha256=${sha256(config.screenshotPath)}")
+        appendLine("screenshot.sha256=$screenshotHash")
+        errors.forEach{appendLine("error=$it")}
     }
     Files.writeString(config.reportPath,report)
+    return passed
 }
 
 fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDock,smoke:WorkspaceSmokeConfig?=null)=application {
@@ -167,7 +174,11 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
             if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("${s.imageWidth}×${s.imageHeight}  │  ${"%.0f".format(zoom*100)}%  │  ${s.workflowMode.name}  │  REF ${s.referencePaths.size}  │  MASK ${if(s.maskPath==null)"off" else if(s.maskVisible)"visible" else "hidden"}  │  ${s.message}",103.0,(height-20).toDouble())}
             if(smoke!=null&&!smokeDone&&frameCount.toLong()>=smoke.frames.toLong()){
                 smokeDone=true
-                writeWorkspaceSmoke(smoke,dock,frameCount.toLong(),width,height)
+                runCatching{writeWorkspaceSmoke(smoke,dock,frameCount.toLong(),width,height)}
+                    .onFailure{e->
+                        smoke.reportPath.parent?.let{Files.createDirectories(it)}
+                        Files.writeString(smoke.reportPath,"UI_SMOKE_FAIL\nerror="+(e.message?:e.javaClass.simpleName)+"\n")
+                    }
                 SwingUtilities.invokeLater{dock.dispose()}
                 application.exit()
             }
