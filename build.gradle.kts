@@ -13,6 +13,8 @@ dependencies {
     runtimeOnly("org.openrndr:openrndr-gl3-jvm:0.5.0")
     runtimeOnly("org.openrndr:openrndr-application-sdl:0.5.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.slf4j:slf4j-api:2.0.20")
+    runtimeOnly("org.slf4j:slf4j-simple:2.0.20")
     runtimeOnly("org.xerial:sqlite-jdbc:3.53.4.0")
     testImplementation(kotlin("test-junit5"))
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.12.2")
