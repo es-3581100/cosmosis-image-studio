@@ -2,7 +2,7 @@
 
 | Capability | State in this build | Evidence / boundary |
 |---|---|---|
-| Offworld OPENRNDR workspace | Implemented / CI compiled | `ui/OpenrndrWorkspace.kt`; canvas, split compare, pan/zoom, lineage instrument, mask + analysis overlays, workflow/reference inspector |
+| Offworld OPENRNDR workspace | Verified graphical runtime on Linux x86_64 CI | `ui/OpenrndrWorkspace.kt` + Swing `ControlDock`; PR #14 run `36644212766` launched the real GLFW/OpenGL workstation under Xvfb, captured both tiled windows, enforced Offworld hard-corner/dark-surface metrics, and passed; [checkpoint](docs/verification/ui-runtime-2026-09-29.md) |
 | Local projects + immutable imports | Implemented | `ProjectStore`, SQLite schema; source and reference imports are immutable project assets |
 | Prompt trees/provenance/search/revisions | Implemented | `PromptLibrary`, `PromptExchange`; core smoke PASS |
 | Smart keywords | Implemented deterministic layer | explicit/imported tags are preserved; regex/frequency tags are separate |

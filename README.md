@@ -14,6 +14,12 @@ Requirements: JDK 21 and Gradle 9.8+. The repository intentionally does not vend
 
 `acceptanceSmoke` is offline and uses the deterministic `local-preview-v1` provider. It exercises project creation, immutable source/reference imports, local analysis + derived overlays, prompt/directive persistence, smart masks and overlay settings, generation/edit workers, branching lineage, rotate/resize/upscale transforms, Agent Build + critic output, restart recovery, diagnostics, and HTML report export without provider credentials or paid calls.
 
+### Graphical workstation smoke
+
+Normal CI also launches the real OPENRNDR + Swing workstation under Xvfb using the GLFW backend and Mesa llvmpipe. The smoke captures the desktop, verifies the ControlDock is visible, checks the authoritative Offworld background/foreground/hard-corner tokens, and rejects regressions where native bright control chrome dominates the Swing surface.
+
+PR #14 run `36644212766` verified the repaired two-window layout and dark control surface on Linux x86_64. The checkpoint, exact pixel metrics, screenshot hash, and limitations are recorded in `docs/verification/ui-runtime-2026-09-29.md`.
+
 Opt-in paid/network smoke checks:
 
 ```bash
