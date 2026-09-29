@@ -44,6 +44,7 @@ jobs:
           COSMOSIS_UI_SMOKE_REPORT: "build/ui-smoke/report.txt"
           COSMOSIS_UI_SMOKE_SCREENSHOT: "build/ui-smoke/workstation.png"
           LIBGL_ALWAYS_SOFTWARE: "1"
+          SDL_VIDEODRIVER: "x11"
         run: |
           command -v xvfb-run
           mkdir -p build/ui-smoke
