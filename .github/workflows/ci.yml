@@ -44,14 +44,13 @@ jobs:
           COSMOSIS_UI_SMOKE_REPORT: "build/ui-smoke/report.txt"
           COSMOSIS_UI_SMOKE_SCREENSHOT: "build/ui-smoke/workstation.png"
           LIBGL_ALWAYS_SOFTWARE: "1"
-          SDL_VIDEODRIVER: "x11"
         run: |
           command -v xvfb-run
           mkdir -p build/ui-smoke
           set +e
           timeout --signal=TERM --kill-after=10s 75s \
             xvfb-run -a -s "-screen 0 2600x1200x24" \
-            gradle --no-daemon run > build/ui-smoke/runtime.log 2>&1
+            gradle --no-daemon -PcosmosisUiSmokeGlfw=true run > build/ui-smoke/runtime.log 2>&1
           code=$?
           set -e
           cat build/ui-smoke/runtime.log
