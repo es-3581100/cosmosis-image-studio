@@ -5,6 +5,7 @@ import org.openrndr.color.ColorRGBa
 import org.openrndr.draw.ColorBuffer
 import org.openrndr.draw.loadFont
 import org.openrndr.draw.loadImage
+import org.openrndr.math.IntVector2
 import org.openrndr.math.Vector2
 import studio.cosmosis.JobState
 import studio.cosmosis.lineage.VersionGraphLayout
@@ -40,6 +41,11 @@ private fun near(rgb:Int,target:java.awt.Color,tolerance:Int=14):Boolean {
     return kotlin.math.abs(r-target.red)<=tolerance && kotlin.math.abs(g-target.green)<=tolerance && kotlin.math.abs(b-target.blue)<=tolerance
 }
 
+private fun brightNeutral(rgb:Int):Boolean {
+    val r=(rgb shr 16) and 255;val g=(rgb shr 8) and 255;val b=rgb and 255
+    return r>=238&&g>=238&&b>=238&&(maxOf(r,g,b)-minOf(r,g,b)<=12)
+}
+
 private fun sha256(path:Path):String=MessageDigest.getInstance("SHA-256")
     .digest(Files.readAllBytes(path)).joinToString(""){"%02x".format(it)}
 
@@ -51,6 +57,7 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
     if(size.width<=0||size.height<=0)errors+="virtual display has invalid dimensions"
     if(!dock.isShowing)errors+="Swing control dock is not showing"
     var dark=0L;var ivory=0L;var sampled=0L;var screenshotHash="unavailable"
+    var dockSampled=0L;var dockDark=0L;var dockBrightNeutral=0L
     runCatching{
         val capture=Robot().createScreenCapture(Rectangle(size))
         if(!ImageIO.write(capture,"png",config.screenshotPath.toFile()))error("Unable to encode UI smoke screenshot")
@@ -59,11 +66,22 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
             if(near(rgb,OffworldTheme.background))dark++
             if(near(rgb,OffworldTheme.foreground))ivory++
         }
+        val db=dock.bounds
+        val x0=db.x.coerceAtLeast(0);val y0=db.y.coerceAtLeast(0)
+        val x1=(db.x+db.width).coerceAtMost(capture.width);val y1=(db.y+db.height).coerceAtMost(capture.height)
+        for(y in y0 until y1 step 3)for(x in x0 until x1 step 3){
+            val rgb=capture.getRGB(x,y);dockSampled++
+            if(near(rgb,OffworldTheme.background,22)||near(rgb,Color(0x13,0x13,0x10),22)||near(rgb,Color(0x1C,0x1C,0x18),22))dockDark++
+            if(brightNeutral(rgb))dockBrightNeutral++
+        }
         screenshotHash=sha256(config.screenshotPath)
     }.onFailure{errors+="screenshot: "+(it.message?:it.javaClass.simpleName)}
     if(OffworldTheme.radius!=0)errors+="Offworld hard-corner authority regressed"
     if(dark<=1000)errors+="Offworld warm-dark surface not visible enough (count=$dark)"
     if(ivory<=10)errors+="Offworld ivory foreground not visible enough (count=$ivory)"
+    if(dockSampled<=1000)errors+="Control dock capture too small to evaluate"
+    if(dockSampled>0&&dockDark*100<dockSampled*45)errors+="Control dock is not predominantly Offworld-dark (dark=$dockDark sampled=$dockSampled)"
+    if(dockSampled>0&&dockBrightNeutral*100>dockSampled*3)errors+="Control dock contains too much bright neutral native chrome (bright=$dockBrightNeutral sampled=$dockSampled)"
     val passed=errors.isEmpty()
     val report=buildString{
         appendLine(if(passed)"UI_SMOKE_PASS" else "UI_SMOKE_FAIL")
@@ -77,6 +95,10 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
         appendLine("sampled=$sampled")
         appendLine("warmDarkPixels=$dark")
         appendLine("ivoryPixels=$ivory")
+        appendLine("dock.bounds=${dock.x},${dock.y},${dock.width},${dock.height}")
+        appendLine("dock.sampled=$dockSampled")
+        appendLine("dock.darkPixels=$dockDark")
+        appendLine("dock.brightNeutralPixels=$dockBrightNeutral")
         appendLine("screenshot=${config.screenshotPath}")
         appendLine("screenshot.sha256=$screenshotHash")
         errors.forEach{appendLine("error=$it")}
@@ -86,7 +108,14 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
 }
 
 fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDock,smoke:WorkspaceSmokeConfig?=null)=application {
-    configure { width=1480;height=900;title="COSMOSIS / IMAGE STUDIO" }
+    val desktop=Toolkit.getDefaultToolkit().screenSize
+    val rightOfDock=dock.x+dock.width+20
+    val tileBesideDock=desktop.width>=rightOfDock+960
+    val workspaceX=if(tileBesideDock)rightOfDock else 20
+    val workspaceY=if(tileBesideDock)dock.y.coerceAtLeast(20) else 20
+    val workspaceWidth=if(tileBesideDock)minOf(1480,desktop.width-workspaceX-20) else minOf(1480,(desktop.width-40).coerceAtLeast(640))
+    val workspaceHeight=minOf(900,(desktop.height-workspaceY-20).coerceAtLeast(640))
+    configure { width=workspaceWidth;height=workspaceHeight;title="COSMOSIS / IMAGE STUDIO";position=IntVector2(workspaceX,workspaceY) }
     program {
         val monoPath=listOf("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf","/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf").firstOrNull{Files.exists(Path.of(it))}
         val serifPath=listOf("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf","/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf").firstOrNull{Files.exists(Path.of(it))}
