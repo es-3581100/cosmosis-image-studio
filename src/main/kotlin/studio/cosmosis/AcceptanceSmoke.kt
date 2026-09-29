@@ -24,6 +24,14 @@ fun main() {
         studio.importImage(source)
         require(state.get().imagePath!=null && state.get().imageWidth==192 && state.get().imageHeight==128)
         val rootVersion=state.get().currentVersion
+        if(!System.getenv("COSMOSIS_ORML_SUPER_RESOLUTION_RUNNER").isNullOrBlank()){
+            val upscaled=studio.ormlSuperResolution()
+            require(Files.isRegularFile(upscaled))
+            require(state.get().imageWidth==384&&state.get().imageHeight==256)
+            require(studio.versionNodes().any{it.id==state.get().currentVersion&&it.operation==VersionOperation.UPSCALE})
+            studio.setCurrentVersion(rootVersion)
+            require(state.get().imageWidth==192&&state.get().imageHeight==128)
+        }
         val reference=studio.addReferenceImage(source)
         require(studio.referenceImages().single().id==reference.id)
         val directive=studio.saveDirective("Acceptance guard","Preserve user-visible text and source identity unless explicitly changed.")

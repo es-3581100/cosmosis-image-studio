@@ -29,7 +29,7 @@ jobs:
       - name: Static provenance and Offworld audit
         run: ./scripts/static-audit.sh
       - name: Dependency-resolved tests and acceptance
-        run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist :orml-runner-u2net:installDist :orml-runner-bodypix:installDist :orml-runner-classifier:installDist --stacktrace
+        run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist :orml-runner-u2net:installDist :orml-runner-bodypix:installDist :orml-runner-classifier:installDist :orml-runner-super-resolution:installDist --stacktrace
       - name: ORML runner distribution smoke
         run: |
           RUNNER="orml-runner/build/install/orml-runner/bin/orml-runner"
@@ -67,3 +67,13 @@ jobs:
           grep -F '"protocolVersion":"1"' /tmp/cosmosis-classifier-describe.json
           grep -F '"id":"image-embedding","available":false' /tmp/cosmosis-classifier-describe.json
           grep -F '"errors":[' /tmp/cosmosis-classifier-describe.json
+      - name: Super-resolution helper script syntax
+        run: bash -n scripts/fetch-super-resolution-model.sh scripts/super-resolution-native-smoke.sh
+      - name: Super-resolution backend distribution smoke
+        run: |
+          RUNNER="orml-runner-super-resolution/build/install/orml-runner-super-resolution/bin/orml-runner-super-resolution"
+          test -x "$RUNNER"
+          "$RUNNER" --describe > /tmp/cosmosis-super-resolution-describe.json
+          grep -F '"protocolVersion":"1"' /tmp/cosmosis-super-resolution-describe.json
+          grep -F '"id":"super-resolution","available":false' /tmp/cosmosis-super-resolution-describe.json
+          grep -F '"errors":[' /tmp/cosmosis-super-resolution-describe.json
