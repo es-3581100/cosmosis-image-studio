@@ -37,6 +37,40 @@ jobs:
           "$RUNNER" --describe | grep -F '"protocolVersion":"1"'
           "$RUNNER" --self-test > /tmp/cosmosis-orml-runner-self-test.json
           grep -F '"smart-subject-mask"' /tmp/cosmosis-orml-runner-self-test.json
+      - name: Desktop UI runtime smoke
+        env:
+          COSMOSIS_UI_SMOKE: "1"
+          COSMOSIS_UI_SMOKE_FRAMES: "20"
+          COSMOSIS_UI_SMOKE_REPORT: "build/ui-smoke/report.txt"
+          COSMOSIS_UI_SMOKE_SCREENSHOT: "build/ui-smoke/workstation.png"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          command -v xvfb-run
+          mkdir -p build/ui-smoke
+          set +e
+          timeout --signal=TERM --kill-after=10s 75s \
+            xvfb-run -a -s "-screen 0 2600x1200x24" \
+            gradle --no-daemon -PcosmosisUiSmokeGlfw=true :run > build/ui-smoke/runtime.log 2>&1
+          code=$?
+          set -e
+          cat build/ui-smoke/runtime.log
+          if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
+            printf 'UI_SMOKE_FAIL\nerror=runtime-timeout\nexit=%s\n' "$code" > build/ui-smoke/report.txt
+          fi
+          test "$code" -eq 0
+          grep -F "UI_SMOKE_PASS" build/ui-smoke/report.txt
+          grep -F "theme.background=#10100E" build/ui-smoke/report.txt
+          grep -F "theme.foreground=#FFFFE3" build/ui-smoke/report.txt
+          grep -F "theme.radius=0" build/ui-smoke/report.txt
+          test -s build/ui-smoke/workstation.png
+          cat build/ui-smoke/report.txt
+      - name: Preserve UI smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosis-ui-smoke
+          path: build/ui-smoke/
+          if-no-files-found: warn
       - name: U2Net helper script syntax
         run: bash -n scripts/fetch-u2net-model.sh scripts/u2net-native-smoke.sh
       - name: U2Net backend distribution smoke
