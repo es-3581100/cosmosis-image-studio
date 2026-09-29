@@ -174,7 +174,7 @@ Real inference is opt-in:
 COSMOSIS_SUPER_RESOLUTION_NATIVE_TESTS=1 bash scripts/super-resolution-native-smoke.sh input.png
 ```
 
-Ordinary CI proves packaging and fail-closed readiness only. Native FALSR execution is not marked VERIFIED until the manual workflow produces a valid 2× PNG and Cosmosis admits it through `ormlSuperResolution()` as an UPSCALE child version.
+Native FALSR execution is verified on Linux x86_64 with TensorFlow Java 0.4.1. [Workflow run 36640856920](https://github.com/es-3581100/cosmosis-image-studio/actions/runs/36640856920) verified the pinned model hash, readiness, real inference, a valid 2× PNG, runner admission, and desktop `ormlSuperResolution()` UPSCALE lineage acceptance. See [the verification checkpoint](docs/verification/super-resolution-native-2026-09-29.md). Ordinary CI remains packaging/fail-closed only; other platforms, GPU, recursive native octaves, and maximum-size workloads remain unverified.
 
 
 ## Offline verification
