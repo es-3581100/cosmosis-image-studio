@@ -1,0 +1,62 @@
+name: BodyPix Native Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-bodypix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+
+      - name: Build pinned TensorFlow BodyPix distribution
+        run: gradle --no-daemon :orml-runner-bodypix:test :orml-runner-bodypix:installDist -PcosmosisBodyPixTensorFlow=true --stacktrace
+
+      - name: Fetch and verify pinned BodyPix model
+        run: |
+          MODEL_PATH="$(bash scripts/fetch-bodypix-model.sh "$RUNNER_TEMP/bodypix-mobilenet-1.0.pb")"
+          echo "COSMOSIS_ORML_BODYPIX_MODEL=$MODEL_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate deterministic input image
+        run: |
+          python3 - <<'PY'
+          import struct, zlib
+          w,h=192,128
+          rows=[]
+          for y in range(h):
+              row=bytearray([0])
+              for x in range(w):
+                  subject=(50 <= x <= 145 and 20 <= y <= 108)
+                  rgb=(226,202,145) if subject else (18,18,15)
+                  row += bytes(rgb)
+              rows.append(bytes(row))
+          raw=b"".join(rows)
+          def chunk(kind,data):
+              return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
+          png=b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",w,h,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw,9))+chunk(b"IEND",b"")
+          open("/tmp/cosmosis-bodypix-input.png","wb").write(png)
+          PY
+
+      - name: Verify runner readiness and real model inference
+        run: |
+          RUNNER="orml-runner-bodypix/build/install/orml-runner-bodypix/bin/orml-runner-bodypix"
+          test -x "$RUNNER"
+          "$RUNNER" --describe | tee /tmp/cosmosis-bodypix-describe.json
+          grep -F '"id":"person-body-mask","available":true' /tmp/cosmosis-bodypix-describe.json
+          "$RUNNER" --capability person-body-mask --input /tmp/cosmosis-bodypix-input.png --output /tmp/cosmosis-bodypix-mask.png --option threshold=0.7 --option internalResolution=0.5
+          test -s /tmp/cosmosis-bodypix-mask.png
+          echo "COSMOSIS_ORML_BODYPIX_RUNNER=$GITHUB_WORKSPACE/$RUNNER" >> "$GITHUB_ENV"
+
+      - name: Verify Cosmosis desktop person-mask admission
+        run: gradle --no-daemon acceptanceSmoke --stacktrace
