@@ -60,6 +60,32 @@ A configured executable is not considered `READY` merely because the file exists
 
 Without an admitted adapter/backend, the existing deterministic local saliency mask remains available; Cosmosis does not claim that fallback is ORML inference.
 
+### Pinned U2Net backend
+
+The repository also contains an isolated `orml-runner-u2net` distribution for `smart-subject-mask`. It is grounded in ORML commit `bb6333e62b17a9a0fc12ef889bc3642428e6f4f4`, the upstream U2Net graph/tensor names, the model SHA-256, and the matching ORX TensorFlow Java 0.4.1 lineage.
+
+Ordinary CI intentionally does not run native inference. It verifies the backend compiles, packages, and remains fail-closed when the model/native runtime are absent.
+
+```bash
+./gradlew :orml-runner-u2net:test
+./gradlew :orml-runner-u2net:installDist
+./gradlew :orml-runner-u2net:installDist -PcosmosisU2NetTensorFlow=true
+```
+
+Fetch the pinned model explicitly:
+
+```bash
+MODEL_PATH="$(bash scripts/fetch-u2net-model.sh)"
+export COSMOSIS_ORML_U2NET_MODEL="$MODEL_PATH"
+```
+
+Then, only when native testing is intentionally enabled:
+
+```bash
+COSMOSIS_U2NET_NATIVE_TESTS=1 bash scripts/u2net-native-smoke.sh input.png
+```
+
+
 ## Offline verification
 
 The dependency-light domain can be exercised without Gradle/network:

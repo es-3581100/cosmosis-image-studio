@@ -29,7 +29,7 @@ jobs:
       - name: Static provenance and Offworld audit
         run: ./scripts/static-audit.sh
       - name: Dependency-resolved tests and acceptance
-        run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist --stacktrace
+        run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist :orml-runner-u2net:installDist --stacktrace
       - name: ORML runner distribution smoke
         run: |
           RUNNER="orml-runner/build/install/orml-runner/bin/orml-runner"
@@ -37,3 +37,13 @@ jobs:
           "$RUNNER" --describe | grep -F '"protocolVersion":"1"'
           "$RUNNER" --self-test > /tmp/cosmosis-orml-runner-self-test.json
           grep -F '"smart-subject-mask"' /tmp/cosmosis-orml-runner-self-test.json
+      - name: U2Net helper script syntax
+        run: bash -n scripts/fetch-u2net-model.sh scripts/u2net-native-smoke.sh
+      - name: U2Net backend distribution smoke
+        run: |
+          RUNNER="orml-runner-u2net/build/install/orml-runner-u2net/bin/orml-runner-u2net"
+          test -x "$RUNNER"
+          "$RUNNER" --describe > /tmp/cosmosis-u2net-describe.json
+          grep -F '"protocolVersion":"1"' /tmp/cosmosis-u2net-describe.json
+          grep -F '"id":"smart-subject-mask","available":false' /tmp/cosmosis-u2net-describe.json
+          grep -F '"errors":[' /tmp/cosmosis-u2net-describe.json
