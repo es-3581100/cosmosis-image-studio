@@ -9,9 +9,14 @@ import org.openrndr.math.Vector2
 import studio.cosmosis.JobState
 import studio.cosmosis.lineage.VersionGraphLayout
 import studio.cosmosis.theme.OffworldTheme
+import java.awt.Rectangle
+import java.awt.Robot
+import java.awt.Toolkit
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import javax.imageio.ImageIO
 import javax.swing.SwingUtilities
 import kotlin.math.min
 
@@ -24,7 +29,56 @@ private val GREEN=OffworldTheme.positive.toOrColor()
 private val RED=OffworldTheme.destructive.toOrColor()
 private val SURFACE=ColorRGBa(21/255.0,21/255.0,17/255.0,1.0)
 
-fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDock)=application {
+data class WorkspaceSmokeConfig(
+    val frames:Int=20,
+    val reportPath:Path=Path.of("build/ui-smoke/report.txt"),
+    val screenshotPath:Path=Path.of("build/ui-smoke/workstation.png")
+)
+
+private fun near(rgb:Int,target:java.awt.Color,tolerance:Int=14):Boolean {
+    val r=(rgb shr 16) and 255;val g=(rgb shr 8) and 255;val b=rgb and 255
+    return kotlin.math.abs(r-target.red)<=tolerance && kotlin.math.abs(g-target.green)<=tolerance && kotlin.math.abs(b-target.blue)<=tolerance
+}
+
+private fun sha256(path:Path):String=MessageDigest.getInstance("SHA-256")
+    .digest(Files.readAllBytes(path)).joinToString(""){"%02x".format(it)}
+
+private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,frame:Long,workspaceWidth:Int,workspaceHeight:Int){
+    config.reportPath.parent?.let{Files.createDirectories(it)}
+    config.screenshotPath.parent?.let{Files.createDirectories(it)}
+    val size=Toolkit.getDefaultToolkit().screenSize
+    check(size.width>0&&size.height>0){"Virtual display has invalid dimensions"}
+    check(dock.isShowing){"Swing control dock is not showing"}
+    val capture=Robot().createScreenCapture(Rectangle(size))
+    check(ImageIO.write(capture,"png",config.screenshotPath.toFile())){"Unable to encode UI smoke screenshot"}
+    var dark=0L;var ivory=0L;var sampled=0L
+    for(y in 0 until capture.height step 3)for(x in 0 until capture.width step 3){
+        val rgb=capture.getRGB(x,y);sampled++
+        if(near(rgb,OffworldTheme.background))dark++
+        if(near(rgb,OffworldTheme.foreground))ivory++
+    }
+    check(OffworldTheme.radius==0){"Offworld hard-corner authority regressed"}
+    check(dark>1000){"Offworld warm-dark surface was not visible in captured desktop (count=$dark)"}
+    check(ivory>10){"Offworld ivory foreground was not visible in captured desktop (count=$ivory)"}
+    val report=buildString{
+        appendLine("UI_SMOKE_PASS")
+        appendLine("frame=$frame")
+        appendLine("workspace=${workspaceWidth}x$workspaceHeight")
+        appendLine("desktop=${size.width}x${size.height}")
+        appendLine("dock.showing=${dock.isShowing}")
+        appendLine("theme.background=#10100E")
+        appendLine("theme.foreground=#FFFFE3")
+        appendLine("theme.radius=${OffworldTheme.radius}")
+        appendLine("sampled=$sampled")
+        appendLine("warmDarkPixels=$dark")
+        appendLine("ivoryPixels=$ivory")
+        appendLine("screenshot=${config.screenshotPath}")
+        appendLine("screenshot.sha256=${sha256(config.screenshotPath)}")
+    }
+    Files.writeString(config.reportPath,report)
+}
+
+fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDock,smoke:WorkspaceSmokeConfig?=null)=application {
     configure { width=1480;height=900;title="COSMOSIS / IMAGE STUDIO" }
     program {
         val monoPath=listOf("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf","/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf").firstOrNull{Files.exists(Path.of(it))}
@@ -32,6 +86,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
         val mono=monoPath?.let{loadFont(it,13.0)};val monoSmall=monoPath?.let{loadFont(it,10.0)};val serif=serifPath?.let{loadFont(it,24.0)}
         var loadedPath:String?=null;var image:ColorBuffer?=null;var compareLoaded:String?=null;var compareImage:ColorBuffer?=null;var maskLoaded:String?=null;var mask:ColorBuffer?=null
         var pan=Vector2.ZERO;var zoom=1.0;var lastDrag:Vector2?=null
+        var smokeDone=false
         window.drop.listen { dropped -> dropped.files.firstOrNull{File(it).extension.lowercase() in listOf("png","jpg","jpeg","webp") }?.let{runCatching{controller.importImage(Path.of(it))}} }
         mouse.scrolled.listen { zoom=(zoom*(if(it.rotation.y<0)1.1 else .9)).coerceIn(.1,8.0);state.update{s->s.copy(zoom=zoom)} }
         mouse.buttonDown.listen { lastDrag=it.position }
@@ -110,6 +165,12 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                 layout.forEach{pt->val x=gx0+(gx1-gx0)*pt.x;val y=gy0+(gy1-gy0)*pt.y;val active=pt.id==s.currentVersion;drawer.stroke=if(active)FG else ColorRGBa(1.0,1.0,227/255.0,.28);drawer.fill=if(active)FG else SURFACE;drawer.rectangle(x-4,y-4,8.0,8.0);if(active){drawer.fill=FG;drawer.text(pt.id.takeLast(6),x+8,y+4)}}
             }
             if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("${s.imageWidth}×${s.imageHeight}  │  ${"%.0f".format(zoom*100)}%  │  ${s.workflowMode.name}  │  REF ${s.referencePaths.size}  │  MASK ${if(s.maskPath==null)"off" else if(s.maskVisible)"visible" else "hidden"}  │  ${s.message}",103.0,(height-20).toDouble())}
+            if(smoke!=null&&!smokeDone&&frameCount.toLong()>=smoke.frames.toLong()){
+                smokeDone=true
+                writeWorkspaceSmoke(smoke,dock,frameCount.toLong(),width,height)
+                SwingUtilities.invokeLater{dock.dispose()}
+                application.exit()
+            }
         }
     }
 }
