@@ -1,0 +1,60 @@
+name: Super Resolution Native Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-super-resolution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+
+      - name: Build pinned TensorFlow FALSR distribution
+        run: gradle --no-daemon :orml-runner-super-resolution:test :orml-runner-super-resolution:installDist -PcosmosisSuperResolutionTensorFlow=true --stacktrace
+
+      - name: Fetch and verify pinned FALSR model
+        run: |
+          MODEL_PATH="$(bash scripts/fetch-super-resolution-model.sh "$RUNNER_TEMP/FALSR-A-1.0.pb")"
+          echo "COSMOSIS_ORML_SUPER_RESOLUTION_MODEL=$MODEL_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate deterministic input image
+        run: |
+          python3 - <<'PY'
+          import struct,zlib
+          w,h=64,48
+          rows=[]
+          for y in range(h):
+              row=bytearray([0])
+              for x in range(w):
+                  rgb=((x*4)%256,(y*5)%256,((x+y)*3)%256)
+                  row += bytes(rgb)
+              rows.append(bytes(row))
+          raw=b"".join(rows)
+          def chunk(kind,data):
+              return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
+          png=b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",w,h,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw,9))+chunk(b"IEND",b"")
+          open("/tmp/cosmosis-falsr-input.png","wb").write(png)
+          PY
+
+      - name: Verify runner readiness and real model inference
+        run: |
+          RUNNER="orml-runner-super-resolution/build/install/orml-runner-super-resolution/bin/orml-runner-super-resolution"
+          test -x "$RUNNER"
+          "$RUNNER" --describe | tee /tmp/cosmosis-falsr-describe.json
+          grep -F '"id":"super-resolution","available":true' /tmp/cosmosis-falsr-describe.json
+          COSMOSIS_SUPER_RESOLUTION_NATIVE_TESTS=1 COSMOSIS_SUPER_RESOLUTION_RUNNER="$RUNNER" bash scripts/super-resolution-native-smoke.sh /tmp/cosmosis-falsr-input.png /tmp/cosmosis-falsr-output.png
+          echo "COSMOSIS_ORML_SUPER_RESOLUTION_RUNNER=$GITHUB_WORKSPACE/$RUNNER" >> "$GITHUB_ENV"
+
+      - name: Verify Cosmosis desktop upscale lineage admission
+        run: gradle --no-daemon acceptanceSmoke --stacktrace
