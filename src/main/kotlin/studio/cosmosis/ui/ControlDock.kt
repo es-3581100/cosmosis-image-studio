@@ -18,6 +18,65 @@ import javax.swing.undo.UndoManager
 import javax.swing.text.JTextComponent
 
 class ControlDock(private val controller:StudioController,private val state:StudioState):JFrame("COSMOSIS / CONTROL") {
+    private companion object {
+        init { installOffworldDefaults() }
+
+        fun installOffworldDefaults() {
+            runCatching { UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName()) }
+            val bg=OffworldTheme.background
+            val fg=OffworldTheme.foreground
+            val panel=Color(0x1C,0x1C,0x18)
+            val field=Color(0x13,0x13,0x10)
+            val text=Color(0x0D,0x0D,0x0B)
+            val line=BorderFactory.createLineBorder(OffworldTheme.hairlineNormal)
+            UIManager.put("Panel.background",bg)
+            UIManager.put("Viewport.background",bg)
+            UIManager.put("TabbedPane.background",bg)
+            UIManager.put("TabbedPane.foreground",fg)
+            UIManager.put("TabbedPane.selected",panel)
+            UIManager.put("TabbedPane.contentAreaColor",bg)
+            UIManager.put("TabbedPane.focus",OffworldTheme.hairlineStrong)
+            UIManager.put("Label.foreground",fg)
+            UIManager.put("Button.background",panel)
+            UIManager.put("Button.foreground",fg)
+            UIManager.put("Button.select",OffworldTheme.secondary)
+            UIManager.put("CheckBox.background",bg)
+            UIManager.put("CheckBox.foreground",fg)
+            UIManager.put("TextField.background",field)
+            UIManager.put("TextField.foreground",fg)
+            UIManager.put("TextField.caretForeground",fg)
+            UIManager.put("TextArea.background",text)
+            UIManager.put("TextArea.foreground",fg)
+            UIManager.put("TextArea.caretForeground",fg)
+            UIManager.put("ComboBox.background",field)
+            UIManager.put("ComboBox.foreground",fg)
+            UIManager.put("ComboBox.selectionBackground",OffworldTheme.secondary)
+            UIManager.put("ComboBox.selectionForeground",fg)
+            UIManager.put("Spinner.background",field)
+            UIManager.put("Spinner.foreground",fg)
+            UIManager.put("Tree.background",field)
+            UIManager.put("Tree.foreground",fg)
+            UIManager.put("Tree.selectionBackground",OffworldTheme.secondary)
+            UIManager.put("Tree.selectionForeground",fg)
+            UIManager.put("List.background",field)
+            UIManager.put("List.foreground",fg)
+            UIManager.put("List.selectionBackground",OffworldTheme.secondary)
+            UIManager.put("List.selectionForeground",fg)
+            UIManager.put("ScrollPane.background",bg)
+            UIManager.put("ScrollBar.background",bg)
+            UIManager.put("ScrollBar.thumb",OffworldTheme.secondary)
+            UIManager.put("SplitPane.background",bg)
+            UIManager.put("OptionPane.background",bg)
+            UIManager.put("OptionPane.messageForeground",fg)
+            UIManager.put("ToolTip.background",panel)
+            UIManager.put("ToolTip.foreground",fg)
+            listOf("TextField","TextArea","ComboBox","Spinner","ScrollPane","Tree","List").forEach {
+                UIManager.put("$it.border",line)
+            }
+            UIManager.put("Component.arc",0)
+        }
+    }
+
     private val prompt=JTextArea(14,40)
     private val promptTitle=JTextField("Untitled prompt")
     private val treePath=JTextField("MY PROMPTS/General")
@@ -91,7 +150,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             ormlEnabled.isSelected=s.ormlEnabled
             refreshTrees();refreshReferences();refreshVersions();refreshDirectives();refreshOrmlStatus()
         } }
-        installKeys();pack();setLocation(30,70);isVisible=true
+        installKeys();pack();setLocation(30,70);applyThemeToTree(this);isVisible=true
     }
 
     private fun promptPanel():JPanel = panel().apply {
@@ -465,7 +524,27 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             else->false
         }
     }}
-    private fun applyTheme(){UIManager.put("Panel.background",OffworldTheme.background);UIManager.put("TabbedPane.background",OffworldTheme.background);UIManager.put("TabbedPane.foreground",OffworldTheme.foreground);UIManager.put("Label.foreground",OffworldTheme.foreground);UIManager.put("Button.background",Color(0x1C,0x1C,0x18));UIManager.put("Button.foreground",OffworldTheme.foreground);UIManager.put("TextField.background",Color(0x13,0x13,0x10));UIManager.put("TextField.foreground",OffworldTheme.foreground);UIManager.put("TextArea.background",Color(0x0D,0x0D,0x0B));UIManager.put("TextArea.foreground",OffworldTheme.foreground);UIManager.put("Tree.background",Color(0x13,0x13,0x10));UIManager.put("Tree.foreground",OffworldTheme.foreground);UIManager.put("List.background",Color(0x13,0x13,0x10));UIManager.put("List.foreground",OffworldTheme.foreground);UIManager.put("ScrollPane.background",OffworldTheme.background);UIManager.put("Component.arc",0)}
+    private fun applyTheme(){installOffworldDefaults()}
+    private fun applyThemeToTree(root:Component){
+        val field=Color(0x13,0x13,0x10)
+        val text=Color(0x0D,0x0D,0x0B)
+        val panel=Color(0x1C,0x1C,0x18)
+        val line=BorderFactory.createLineBorder(OffworldTheme.hairlineNormal)
+        when(root){
+            is JTextComponent->{root.background=if(root is JTextArea)text else field;root.foreground=OffworldTheme.foreground;root.caretColor=OffworldTheme.foreground;root.selectionColor=OffworldTheme.secondary;root.selectedTextColor=OffworldTheme.foreground;root.border=line}
+            is JComboBox<*>->{root.background=field;root.foreground=OffworldTheme.foreground;root.border=line}
+            is JSpinner->{root.background=field;root.foreground=OffworldTheme.foreground;root.border=line}
+            is JButton->{root.background=panel;root.foreground=OffworldTheme.foreground;root.isFocusPainted=false;root.border=line}
+            is JCheckBox->{root.background=OffworldTheme.background;root.foreground=OffworldTheme.foreground;root.isFocusPainted=false}
+            is JTree->{root.background=field;root.foreground=OffworldTheme.foreground;root.border=line}
+            is JList<*>->{root.background=field;root.foreground=OffworldTheme.foreground;root.border=line}
+            is JScrollPane->{root.background=OffworldTheme.background;root.viewport.background=field;root.border=line}
+            is JSplitPane->{root.background=OffworldTheme.background;root.dividerSize=1;root.border=null}
+            is JTabbedPane->{root.background=OffworldTheme.background;root.foreground=OffworldTheme.foreground;root.border=line}
+            is JPanel->root.background=OffworldTheme.background
+        }
+        if(root is Container)root.components.forEach(::applyThemeToTree)
+    }
     private fun panel(layout:LayoutManager=FlowLayout()):JPanel=JPanel(layout).apply{background=OffworldTheme.background;border=BorderFactory.createEmptyBorder(13,13,13,13)}
     private fun label(s:String)=JLabel(s).apply{font=Font(Font.MONOSPACED,Font.PLAIN,11);foreground=OffworldTheme.muted}
     private fun button(p:Container,text:String,action:()->Unit){p.add(JButton(text).apply{font=Font(Font.MONOSPACED,Font.PLAIN,11);isFocusPainted=false;border=BorderFactory.createLineBorder(OffworldTheme.secondary);addActionListener{action()}})}
