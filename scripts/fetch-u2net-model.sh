@@ -8,10 +8,31 @@ DEST="${1:-${XDG_DATA_HOME:-$HOME/.local/share}/cosmosis/models/${MODEL_NAME}.pb
 
 mkdir -p "$(dirname "$DEST")"
 
+sha256_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$path" <<'PY'
+import hashlib, sys
+h=hashlib.sha256()
+with open(sys.argv[1],"rb") as f:
+    for block in iter(lambda:f.read(1024*1024),b""):
+        h.update(block)
+print(h.hexdigest())
+PY
+  else
+    echo "no SHA-256 tool available (sha256sum, shasum, or python3 required)" >&2
+    return 2
+  fi
+}
+
 verify_file() {
   local path="$1"
   local found
-  found="$(sha256sum "$path" | awk '{print $1}')"
+  found="$(sha256_file "$path")"
   if [[ "$found" != "$EXPECTED_SHA" ]]; then
     echo "hash mismatch for $path: $found != $EXPECTED_SHA" >&2
     return 1
