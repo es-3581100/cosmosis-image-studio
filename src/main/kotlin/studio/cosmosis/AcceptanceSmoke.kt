@@ -34,6 +34,14 @@ fun main() {
         require(extracted.contains("STYLE DNA"))
         require(state.get().analysisRegions.isNotEmpty())
         require(Files.list(projectRoot.resolve("metadata")).use{stream->stream.anyMatch{it.fileName.toString().startsWith("analysis-")}})
+        if(!System.getenv("COSMOSIS_ORML_CLASSIFIER_RUNNER").isNullOrBlank()){
+            val embedding=studio.ormlImageEmbedding()
+            require(Files.isRegularFile(embedding))
+            val body=Files.readString(embedding)
+            require(body.contains("\"embedding\""))
+            require(body.contains("\"classification\""))
+            require(body.contains("\"labelsResolved\":false"))
+        }
         val prompt=studio.savePrompt("Acceptance prompt",extracted,"MY PROMPTS/Acceptance")
         val mask=studio.smartSaliencyMask()
         require(Files.size(mask)>0)

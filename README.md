@@ -113,6 +113,38 @@ Native BodyPix execution is verified on the GitHub Linux x86_64 runner with Tens
 This evidence is recorded in `docs/verification/bodypix-native-2026-09-29.md`. The claim is platform-scoped: macOS, Windows, and GPU BodyPix variants remain unverified.
 
 
+### Pinned Image Classifier / Embedding backend
+
+The optional `orml-runner-classifier` distribution implements `image-embedding` using the MobileNetV3 graph bundled by pinned ORML commit `bb6333e62b17a9a0fc12ef889bc3642428e6f4f4`.
+
+Its model is pinned by Git object identity rather than a guessed external checksum:
+
+```text
+model path:      orml-image-classifier/src/main/resources/tfmodels/v3-large-minimalistic_224_1.0_float.pb
+Git blob SHA-1:  2e03a7f49b2bf46dc04349d8af9b669d2fca484e
+size:            15,923,156 bytes
+TensorFlow Java: 0.4.1
+```
+
+```bash
+./gradlew :orml-runner-classifier:test
+./gradlew :orml-runner-classifier:installDist
+./gradlew :orml-runner-classifier:installDist -PcosmosisClassifierTensorFlow=true
+MODEL_PATH="$(bash scripts/fetch-classifier-model.sh)"
+export COSMOSIS_ORML_CLASSIFIER_MODEL="$MODEL_PATH"
+```
+
+The backend emits full embedding values plus top ImageNet class **indices/scores** as generated metadata. It intentionally does not copy the upstream 1000-label name table into Cosmosis, and generated class metadata never overwrites user-authored tags.
+
+Real inference is opt-in:
+
+```bash
+COSMOSIS_CLASSIFIER_NATIVE_TESTS=1 bash scripts/classifier-native-smoke.sh input.png
+```
+
+Ordinary CI proves packaging and fail-closed readiness only. Native classifier execution is not marked VERIFIED until the manual workflow produces valid embedding JSON and passes desktop `ormlImageEmbedding()` admission through `acceptanceSmoke`.
+
+
 ## Offline verification
 
 The dependency-light domain can be exercised without Gradle/network:

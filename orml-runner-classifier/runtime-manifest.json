@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "capabilityId": "image-embedding",
+  "backendId": "mobilenetv3-classifier-tensorflow-pinned",
+  "upstream": {
+    "repository": "https://github.com/openrndr/orml",
+    "commit": "bb6333e62b17a9a0fc12ef889bc3642428e6f4f4",
+    "sourcePath": "orml-image-classifier/src/main/kotlin/ImageClassifier.kt"
+  },
+  "orxTensorflowLineage": {
+    "repository": "https://github.com/openrndr/orx",
+    "commit": "0a24780d8446f998b9f13b61a328b97d91878500",
+    "tensorflowJavaVersion": "0.4.1",
+    "apiCoordinate": "org.tensorflow:tensorflow-core-api:0.4.1",
+    "nativeClassifiers": [
+      "linux-x86_64",
+      "macosx-x86_64",
+      "windows-x86_64"
+    ]
+  },
+  "model": {
+    "name": "v3-large-minimalistic_224_1.0_float",
+    "path": "orml-image-classifier/src/main/resources/tfmodels/v3-large-minimalistic_224_1.0_float.pb",
+    "gitBlobSha1": "2e03a7f49b2bf46dc04349d8af9b669d2fca484e",
+    "sizeBytes": 15923156,
+    "environment": "COSMOSIS_ORML_CLASSIFIER_MODEL"
+  },
+  "graph": {
+    "input": "input",
+    "classificationOutput": "MobilenetV3/Predictions/Softmax",
+    "embeddingOutput": "MobilenetV3/Logits/Conv2d_1c_1x1/BiasAdd",
+    "width": 224,
+    "height": 224,
+    "channels": 3
+  },
+  "preprocessing": {
+    "resize": "bilinear",
+    "channelOrder": "RGB",
+    "range": "0..1",
+    "verticalFlip": true
+  },
+  "output": {
+    "format": "json",
+    "classification": "top ImageNet class indices + scores",
+    "embedding": "full float vector",
+    "labelNamesBundled": false,
+    "generatedMetadataOnly": true
+  },
+  "nativeVerification": {
+    "status": "not-yet-verified",
+    "ordinaryCi": "fail-closed readiness",
+    "optInEnv": "COSMOSIS_CLASSIFIER_NATIVE_TESTS=1",
+    "requiredBeforeVerified": true
+  }
+}

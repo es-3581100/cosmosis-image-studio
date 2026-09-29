@@ -1,0 +1,67 @@
+name: Image Classifier Native Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-classifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+
+      - name: Build pinned TensorFlow classifier distribution
+        run: gradle --no-daemon :orml-runner-classifier:test :orml-runner-classifier:installDist -PcosmosisClassifierTensorFlow=true --stacktrace
+
+      - name: Fetch and verify pinned classifier model
+        run: |
+          MODEL_PATH="$(bash scripts/fetch-classifier-model.sh "$RUNNER_TEMP/v3-large-minimalistic_224_1.0_float.pb")"
+          echo "COSMOSIS_ORML_CLASSIFIER_MODEL=$MODEL_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate deterministic input image
+        run: |
+          python3 - <<'PY'
+          import struct,zlib
+          w=h=224
+          rows=[]
+          for y in range(h):
+              row=bytearray([0])
+              for x in range(w):
+                  if x < 112 and y < 112:
+                      rgb=(220,55,45)
+                  elif x >= 112 and y < 112:
+                      rgb=(35,170,90)
+                  elif x < 112:
+                      rgb=(45,85,215)
+                  else:
+                      rgb=(225,205,60)
+                  row += bytes(rgb)
+              rows.append(bytes(row))
+          raw=b"".join(rows)
+          def chunk(kind,data):
+              return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
+          png=b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",w,h,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw,9))+chunk(b"IEND",b"")
+          open("/tmp/cosmosis-classifier-input.png","wb").write(png)
+          PY
+
+      - name: Verify runner readiness and real model inference
+        run: |
+          RUNNER="orml-runner-classifier/build/install/orml-runner-classifier/bin/orml-runner-classifier"
+          test -x "$RUNNER"
+          "$RUNNER" --describe | tee /tmp/cosmosis-classifier-describe.json
+          grep -F '"id":"image-embedding","available":true' /tmp/cosmosis-classifier-describe.json
+          COSMOSIS_CLASSIFIER_NATIVE_TESTS=1 COSMOSIS_CLASSIFIER_RUNNER="$RUNNER" bash scripts/classifier-native-smoke.sh /tmp/cosmosis-classifier-input.png /tmp/cosmosis-classifier-output.json
+          echo "COSMOSIS_ORML_CLASSIFIER_RUNNER=$GITHUB_WORKSPACE/$RUNNER" >> "$GITHUB_ENV"
+
+      - name: Verify Cosmosis desktop embedding admission
+        run: gradle --no-daemon acceptanceSmoke --stacktrace
