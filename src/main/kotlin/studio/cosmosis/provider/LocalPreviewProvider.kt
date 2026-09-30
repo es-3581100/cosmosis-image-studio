@@ -21,15 +21,15 @@ class LocalPreviewProvider:ImageProvider {
         transparentBackground=true,customDimensions=true,parallelVariants=true,maxReferenceImages=1,
         qualityLevels=setOf("preview","auto"),outputFormats=setOf("png")
     )
-    override fun capabilities(model:String)=caps
+    override fun capabilities(model:String)=modelDefinition(model).capabilities
     override fun models()=listOf(ModelDefinition(id,"local-preview-v1","Local deterministic preview (not AI)",caps,notes="Offline pipeline verification renderer"))
     override fun generate(request:GenerationRequest):GenerationResult {
-        CapabilityValidator.validate(request,caps,false);val start=System.nanoTime()
+        CapabilityValidator.validate(request,modelDefinition(request.model),false);val start=System.nanoTime()
         val images=(0 until request.variants).map{i->GeneratedImage(renderNew(request,i),"image/png",providerAssetId="local-${request.id}-$i")}
         return GenerationResult(request.id,id,request.model,images,(System.nanoTime()-start)/1_000_000,mapOf("mode" to "deterministic-preview","ai" to "false"))
     }
     override fun edit(request:GenerationRequest):GenerationResult {
-        CapabilityValidator.validate(request,caps,true);require(request.references.size==1){"Local preview edit accepts exactly one source image"};val start=System.nanoTime()
+        CapabilityValidator.validate(request,modelDefinition(request.model),true);require(request.references.size==1){"Local preview edit accepts exactly one source image"};val start=System.nanoTime()
         val source=requireNotNull(ImageIO.read(request.references.single().path.toFile())){"Unsupported source image"}
         val mask=request.mask?.let{requireNotNull(ImageIO.read(it.path.toFile())){"Unsupported mask image"}}
         if(mask!=null)require(mask.width==source.width&&mask.height==source.height){"Mask must match source dimensions"}

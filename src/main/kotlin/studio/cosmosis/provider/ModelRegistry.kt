@@ -17,6 +17,11 @@ data class RegistryModel(
     val aspectRatios:Set<String> = emptySet(),
     val imageSizes:Set<String> = emptySet(),
     val searchGrounding:Boolean=false,
+    val thinkingConfiguration:Boolean=false,
+    val responsesImageGeneration:Boolean=false,
+    val outputCompression:Boolean=false,
+    val interactionStorage:Boolean=false,
+    val continuationProtocol:ContinuationProtocol=ContinuationProtocol.NONE,
     val streamingPreview:Boolean=false,
     val parallelVariants:Boolean=false,
     val maxReferenceImages:Int=0,
@@ -29,7 +34,9 @@ data class RegistryModel(
     fun definition()=ModelDefinition(provider,id,label,ProviderCapabilities(
         textToImage=textToImage,imageToImage=imageToImage,maskEditing=maskEditing,multipleReferences=multipleReferences,
         multiTurnEditing=multiTurnEditing,transparentBackground=transparentBackground,customDimensions=customDimensions,
-        aspectRatios=aspectRatios,imageSizes=imageSizes,searchGrounding=searchGrounding,streamingPreview=streamingPreview,parallelVariants=parallelVariants,
+        aspectRatios=aspectRatios,imageSizes=imageSizes,searchGrounding=searchGrounding,thinkingConfiguration=thinkingConfiguration,
+        responsesImageGeneration=responsesImageGeneration,outputCompression=outputCompression,interactionStorage=interactionStorage,
+        continuationProtocol=continuationProtocol,streamingPreview=streamingPreview,parallelVariants=parallelVariants,
         maxReferenceImages=maxReferenceImages,qualityLevels=qualityLevels,outputFormats=outputFormats,promptRevision=promptRevision
     ),deprecated,notes)
 }
@@ -43,7 +50,7 @@ class ModelRegistry private constructor(val schemaVersion:Int,val models:List<Re
         else -> ModelRegistry(CURRENT_SCHEMA,models)
     }
     companion object {
-        const val CURRENT_SCHEMA=3
+        const val CURRENT_SCHEMA=4
         fun load(path:Path):ModelRegistry=parse(Files.readString(path)).migrate()
         fun bundled():ModelRegistry { val stream=ModelRegistry::class.java.getResourceAsStream("/config/model-registry.json") ?: return ModelRegistry(CURRENT_SCHEMA,emptyList());return parse(stream.bufferedReader().use{it.readText()}).migrate() }
         fun parse(json:String):ModelRegistry{
@@ -53,6 +60,9 @@ class ModelRegistry private constructor(val schemaVersion:Int,val models:List<Re
             fun bool(b:String,k:String)=Regex("\\\"$k\\\"\\s*:\\s*(true|false)").find(b)?.groupValues?.get(1)?.toBoolean()?:false
             fun int(b:String,k:String)=Regex("\\\"$k\\\"\\s*:\\s*(\\d+)").find(b)?.groupValues?.get(1)?.toIntOrNull()?:0
             fun set(b:String,k:String)=str(b,k).split(',').map{it.trim()}.filter{it.isNotBlank()}.toSet()
+            fun continuation(b:String)=str(b,"continuationProtocol").takeIf{it.isNotBlank()}?.let {
+                runCatching{ContinuationProtocol.valueOf(it)}.getOrDefault(ContinuationProtocol.NONE)
+            }?:ContinuationProtocol.NONE
             val models=objectRx.findAll(json).map{m->
                 val b=m.groupValues[1]
                 RegistryModel(
@@ -60,6 +70,8 @@ class ModelRegistry private constructor(val schemaVersion:Int,val models:List<Re
                     textToImage=bool(b,"textToImage"),imageToImage=bool(b,"imageToImage"),maskEditing=bool(b,"maskEditing"),
                     multipleReferences=bool(b,"multipleReferences"),multiTurnEditing=bool(b,"multiTurnEditing"),transparentBackground=bool(b,"transparentBackground"),
                     customDimensions=bool(b,"customDimensions"),aspectRatios=set(b,"aspectRatios"),imageSizes=set(b,"imageSizes"),searchGrounding=bool(b,"searchGrounding"),
+                    thinkingConfiguration=bool(b,"thinkingConfiguration"),responsesImageGeneration=bool(b,"responsesImageGeneration"),
+                    outputCompression=bool(b,"outputCompression"),interactionStorage=bool(b,"interactionStorage"),continuationProtocol=continuation(b),
                     streamingPreview=bool(b,"streamingPreview"),parallelVariants=bool(b,"parallelVariants"),maxReferenceImages=int(b,"maxReferenceImages"),
                     qualityLevels=set(b,"qualityLevels"),outputFormats=set(b,"outputFormats").ifEmpty{setOf("png")},promptRevision=bool(b,"promptRevision"),
                     deprecated=bool(b,"deprecated"),notes=str(b,"notes")

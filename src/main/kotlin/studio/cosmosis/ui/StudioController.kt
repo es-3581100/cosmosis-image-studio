@@ -199,7 +199,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     }
     fun testProvider(id:String):ConnectionStatus=providers.get(id).testConnection()
     fun modelsFor(id:String)=providers.get(id).models()
-    fun capabilitiesFor(id:String,model:String)=providers.get(id).capabilities(model)
+    fun capabilitiesFor(id:String,model:String)=providers.capabilities(id,model)
 
     fun planAgentBuild(intent:String,budget:JobBudget=JobBudget()):String{
         val plan=Director.plan(intent,WorkflowMode.AGENT_BUILD,budget,state.get().imagePath!=null,state.get().maskPath!=null)

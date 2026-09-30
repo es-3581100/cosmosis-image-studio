@@ -48,8 +48,80 @@ class CoreBehaviorTest {
     @Test fun openAiRejectsInvalidCurrentDimensionContractBeforeNetwork(){
         val provider=OpenAiProvider(apiKey={"test"})
         assertFailsWith<IllegalArgumentException>{provider.generate(GenerationRequest(prompt="x",model="gpt-image-2.5-flare",width=1000,height=1000))}
-        assertFailsWith<IllegalArgumentException>{provider.responsesGenerate(GenerationRequest(prompt="x",model="gpt-image-2.5-flare",variants=2))}
+        assertFailsWith<IllegalArgumentException>{provider.generate(GenerationRequest(prompt="x",model="gpt-image-2.5-flare",variants=2,metadata=mapOf("openAiWorkflow" to "responses","reasoningModel" to "test-reasoning")))}
     }
+    @Test fun providerSpecificRequirementsAreCapabilityBound(){
+        val capable=ModelDefinition(
+            provider="gemini",id="capable",label="capable",
+            capabilities=ProviderCapabilities(
+                textToImage=true,outputFormats=setOf("png"),searchGrounding=true,
+                thinkingConfiguration=true,interactionStorage=true,
+                multiTurnEditing=true,continuationProtocol=ContinuationProtocol.GEMINI_INTERACTIONS
+            )
+        )
+        CapabilityValidator.validate(
+            GenerationRequest(
+                prompt="x",model="capable",previousResponseId="ix_1",
+                metadata=mapOf("searchGrounding" to "true","thinkingLevel" to "high","store" to "false")
+            ),
+            capable
+        )
+        val incapable=capable.copy(id="incapable",capabilities=capable.capabilities.copy(searchGrounding=false,thinkingConfiguration=false))
+        val search=assertFailsWith<CapabilityMismatchException>{
+            CapabilityValidator.validate(GenerationRequest(prompt="x",model="incapable",metadata=mapOf("searchGrounding" to "true")),incapable)
+        }
+        assertEquals("searchGrounding",search.capability)
+        val thinking=assertFailsWith<CapabilityMismatchException>{
+            CapabilityValidator.validate(GenerationRequest(prompt="x",model="incapable",metadata=mapOf("thinkingLevel" to "high")),incapable)
+        }
+        assertEquals("thinkingConfiguration",thinking.capability)
+    }
+
+    @Test fun responsesAndContinuationRequireDeclaredSemanticRoute(){
+        val responses=ModelDefinition(
+            provider="openai",id="responses",label="responses",
+            capabilities=ProviderCapabilities(
+                textToImage=true,imageToImage=true,multiTurnEditing=true,outputFormats=setOf("png"),
+                responsesImageGeneration=true,continuationProtocol=ContinuationProtocol.OPENAI_RESPONSES
+            )
+        )
+        CapabilityValidator.validate(
+            GenerationRequest(
+                prompt="x",model="responses",previousResponseId="resp_1",
+                metadata=mapOf("openAiWorkflow" to "responses","reasoningModel" to "reasoner")
+            ),
+            responses
+        )
+        val generic=responses.copy(id="generic",capabilities=responses.capabilities.copy(responsesImageGeneration=false,continuationProtocol=ContinuationProtocol.NONE,multiTurnEditing=false))
+        assertFailsWith<CapabilityMismatchException>{
+            CapabilityValidator.validate(
+                GenerationRequest(prompt="x",model="generic",metadata=mapOf("openAiWorkflow" to "responses","reasoningModel" to "reasoner")),
+                generic
+            )
+        }
+        assertFailsWith<CapabilityMismatchException>{
+            CapabilityValidator.validate(GenerationRequest(prompt="x",model="responses",previousResponseId="resp_1"),responses)
+        }
+    }
+
+    @Test fun exactModelResolutionRejectsUndeclaredAliases(){
+        val provider=GeminiProvider(apiKey={"unused"})
+        assertFailsWith<CapabilityMismatchException>{provider.capabilities("gemini-3.1-flash-image-alias")}
+    }
+
+    @Test fun litellmWireCompatibilityDoesNotGrantResponsesSemantics(){
+        val provider=LiteLlmProvider(apiKey={"unused"},baseUrl="http://127.0.0.1:1")
+        val error=assertFailsWith<CapabilityMismatchException>{
+            provider.generate(
+                GenerationRequest(
+                    prompt="x",model="route-configured",
+                    metadata=mapOf("openAiWorkflow" to "responses","reasoningModel" to "reasoner")
+                )
+            )
+        }
+        assertEquals("responsesImageGeneration",error.capability)
+    }
+
     @Test fun geminiImageParsingIgnoresUnrelatedData(){
         val blocks=JsonUtil.imageBlocks("""{"steps":[{"type":"tool_result","data":"bm90LWltYWdl"},{"type":"model_output","content":[{"type":"image","mime_type":"image/png","data":"aGVsbG8="}]}]}""")
         assertEquals(1,blocks.size);assertEquals("aGVsbG8=",blocks.single().data)
