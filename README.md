@@ -20,6 +20,18 @@ Normal CI also launches the real OPENRNDR + Swing workstation under Xvfb using t
 
 PR #14 run `36644212766` verified the repaired two-window layout and dark control surface on Linux x86_64. The checkpoint, exact pixel metrics, screenshot hash, and limitations are recorded in `docs/verification/ui-runtime-2026-09-29.md`.
 
+### Offline provider contract smoke
+
+Normal CI also exercises the real provider HTTP adapters against an embedded loopback server:
+
+```bash
+./gradlew providerContractSmoke
+```
+
+This makes no paid calls and does not require provider credentials. It verifies OpenAI direct generation, multipart edit and Responses image transport; Gemini Interactions generation/editing with multi-turn/reference metadata; and the LiteLLM/OpenAI-compatible generation route. The fixture validates the expected authentication headers and returns deterministic PNG payloads which must decode successfully.
+
+PR #15 run `36651232116` passed all nine loopback HTTP calls. See `docs/verification/provider-contract-2026-09-29.md`. This is transport-contract evidence, not a claim that current external provider endpoints were contacted successfully.
+
 Opt-in paid/network smoke checks:
 
 ```bash
