@@ -25,7 +25,7 @@ import javax.imageio.ImageIO
  */
 fun main() {
     val reportPath=Path.of(System.getenv("COSMOSIS_PROVIDER_CONTRACT_REPORT")?:"build/provider-contract/report.txt")
-    reportPath.parent?.let(Files::createDirectories)
+    reportPath.parent?.let{Files.createDirectories(it)}
     val temp=Files.createTempDirectory("cosmosis-provider-contract-")
     val reference=temp.resolve("reference.png")
     writeFixture(reference)
