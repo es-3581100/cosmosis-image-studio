@@ -36,8 +36,10 @@ jobs:
         run: |
           gradle --no-daemon providerContractSmoke --stacktrace
           grep -F "PROVIDER_CONTRACT_SMOKE_PASS" build/provider-contract/report.txt
+          grep -F "PROVIDER_CAPABILITY_CONTRACT_PASS" build/provider-contract/report.txt
           grep -F "network=loopback-only" build/provider-contract/report.txt
           grep -F "requests=9" build/provider-contract/report.txt
+          grep -F "unsupported-http-requests=0" build/provider-contract/report.txt
           cat build/provider-contract/report.txt
       - name: Preserve provider contract evidence
         if: always()

@@ -63,14 +63,17 @@ fun main() {
         )
         requirePng(openAiEdit,"openai-edit")
 
-        val openAiResponses=openAi.responsesGenerate(
+        val openAiResponses=openAi.generate(
             GenerationRequest(
                 prompt="offline openai responses contract",
                 model=openAiModel.id,
                 references=listOf(ref),
                 outputFormat="png",
                 previousResponseId="resp_previous",
-                metadata=mapOf("reasoningModel" to "contract-reasoning-model")
+                metadata=mapOf(
+                    "openAiWorkflow" to "responses",
+                    "reasoningModel" to "contract-reasoning-model"
+                )
             )
         )
         requirePng(openAiResponses,"openai-responses")
@@ -130,8 +133,129 @@ fun main() {
         requirePng(liteGenerate,"litellm-generate")
         check(liteGenerate.provider=="litellm")
 
+        var negativeCases=0
+        var unsupportedHttpRequests=0
+        fun expectLocalCapabilityRejection(label:String,block:()->Unit) {
+            val before=fixture.requests.size
+            val failure=runCatching(block).exceptionOrNull()
+            check(failure is CapabilityException){"$label expected CapabilityException, got ${failure?.javaClass?.simpleName}: ${failure?.message}"}
+            val delta=fixture.requests.size-before
+            unsupportedHttpRequests+=delta
+            check(delta==0){"$label emitted $delta provider HTTP request(s) before rejection"}
+            negativeCases++
+        }
+
+        val geminiNoSearch=GeminiProvider(
+            apiKey={"contract-gemini-secret"},
+            baseUrl=fixture.baseUrl+"/v1beta",
+            modelDefinitions=listOf(
+                geminiModel.copy(
+                    id="gemini-no-search",
+                    capabilities=geminiModel.capabilities.copy(searchGrounding=false)
+                )
+            )
+        )
+        expectLocalCapabilityRejection("gemini.search.unsupported") {
+            geminiNoSearch.generate(GenerationRequest(prompt="reject search",model="gemini-no-search",metadata=mapOf("searchGrounding" to "true")))
+        }
+
+        val geminiNoThinking=GeminiProvider(
+            apiKey={"contract-gemini-secret"},
+            baseUrl=fixture.baseUrl+"/v1beta",
+            modelDefinitions=listOf(
+                geminiModel.copy(
+                    id="gemini-no-thinking",
+                    capabilities=geminiModel.capabilities.copy(thinkingConfiguration=false)
+                )
+            )
+        )
+        expectLocalCapabilityRejection("gemini.thinking.unsupported") {
+            geminiNoThinking.generate(GenerationRequest(prompt="reject thinking",model="gemini-no-thinking",metadata=mapOf("thinkingLevel" to "high")))
+        }
+
+        expectLocalCapabilityRejection("openai.gemini-search-option") {
+            openAi.generate(GenerationRequest(prompt="reject cross-provider search",model=openAiModel.id,metadata=mapOf("searchGrounding" to "true")))
+        }
+        expectLocalCapabilityRejection("litellm.gemini-search-option") {
+            liteLlm.generate(GenerationRequest(prompt="reject gateway search",model=liteModel.id,metadata=mapOf("searchGrounding" to "true")))
+        }
+
+        val genericOpenAi=OpenAiProvider(
+            apiKey={"contract-openai-secret"},
+            baseUrl=fixture.baseUrl+"/v1",
+            modelDefinitions=listOf(
+                openAiModel.copy(
+                    id="openai-generic-only",
+                    capabilities=openAiModel.capabilities.copy(
+                        responsesImageGeneration=false,
+                        multiTurnEditing=false,
+                        continuationProtocol=ContinuationProtocol.NONE
+                    )
+                )
+            )
+        )
+        expectLocalCapabilityRejection("openai.responses.generic-route") {
+            genericOpenAi.generate(
+                GenerationRequest(
+                    prompt="reject responses",
+                    model="openai-generic-only",
+                    metadata=mapOf("openAiWorkflow" to "responses","reasoningModel" to "contract-reasoning-model")
+                )
+            )
+        }
+        expectLocalCapabilityRejection("litellm.responses") {
+            liteLlm.generate(
+                GenerationRequest(
+                    prompt="reject litellm responses",
+                    model=liteModel.id,
+                    metadata=mapOf("openAiWorkflow" to "responses","reasoningModel" to "contract-reasoning-model")
+                )
+            )
+        }
+        expectLocalCapabilityRejection("responses.reasoning-model-smuggle") {
+            openAi.generate(
+                GenerationRequest(
+                    prompt="reject orphan reasoning model",
+                    model=openAiModel.id,
+                    metadata=mapOf("reasoningModel" to "contract-reasoning-model")
+                )
+            )
+        }
+        expectLocalCapabilityRejection("responses.direct-continuation") {
+            openAi.generate(
+                GenerationRequest(
+                    prompt="reject direct continuation",
+                    model=openAiModel.id,
+                    previousResponseId="resp_should_not_cross"
+                )
+            )
+        }
+        expectLocalCapabilityRejection("litellm.compression-semantic") {
+            liteLlm.generate(
+                GenerationRequest(
+                    prompt="reject compression",
+                    model=liteModel.id,
+                    outputFormat="webp",
+                    metadata=mapOf("compression" to "70")
+                )
+            )
+        }
+        expectLocalCapabilityRejection("cross-provider-gemini-store") {
+            openAi.generate(
+                GenerationRequest(
+                    prompt="reject store",
+                    model=openAiModel.id,
+                    metadata=mapOf("store" to "true")
+                )
+            )
+        }
+        expectLocalCapabilityRejection("undeclared-model-alias") {
+            openAi.generate(GenerationRequest(prompt="reject alias",model=openAiModel.id+"-alias"))
+        }
+
         val requests=fixture.requests.toList()
-        check(requests.size==9){"Expected 9 provider HTTP calls, got ${requests.size}"}
+        check(requests.size==9){"Expected 9 supported provider HTTP calls, got ${requests.size}"}
+        check(unsupportedHttpRequests==0){"Unsupported cases emitted $unsupportedHttpRequests provider HTTP request(s)"}
         check(requests.all{it.authOk}){"A provider request reached the fixture without the required auth header"}
 
         val direct=requests.single{it.path=="/v1/images/generations"}
@@ -168,8 +292,22 @@ fun main() {
         check(lite.body.contains("offline litellm contract"))
 
         lines += "PROVIDER_CONTRACT_SMOKE_PASS"
+        lines += "PROVIDER_CAPABILITY_CONTRACT_PASS"
         lines += "network=loopback-only"
         lines += "requests=${requests.size}"
+        lines += "positive-cases=7"
+        lines += "negative-cases=$negativeCases"
+        lines += "unsupported-http-requests=$unsupportedHttpRequests"
+        lines += "gemini.search.supported=pass"
+        lines += "gemini.search.unsupported=pass"
+        lines += "gemini.thinking.supported=pass"
+        lines += "gemini.thinking.unsupported=pass"
+        lines += "openai.responses.supported=pass"
+        lines += "openai.responses.generic-route-rejected=pass"
+        lines += "openai.responses.litellm-route-rejected=pass"
+        lines += "cross-provider-option-smuggling=pass"
+        lines += "undeclared-model-alias-rejected=pass"
+        lines += "provider-compatible-not-semantic-compatible=pass"
         lines += "openai.connection=pass"
         lines += "openai.direct-generation=pass"
         lines += "openai.multipart-edit=pass"

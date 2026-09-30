@@ -32,6 +32,8 @@ This makes no paid calls and does not require provider credentials. It verifies 
 
 PR #15 run `36651232116` passed all nine loopback HTTP calls. See `docs/verification/provider-contract-2026-09-29.md`. This is transport-contract evidence, not a claim that current external provider endpoints were contacted successfully.
 
+PR #16 extends that same loopback harness with a model/route capability contract. Run `36653383400` passed 7 supported semantic cases and 11 negative cases with `unsupported-http-requests=0`. Exact model IDs are required; provider-consumed metadata such as Gemini Search/thinking/storage and OpenAI Responses/chaining/compression is validated against the selected model declaration before dispatch. OpenAI-compatible wire format alone does not grant OpenAI-specific semantics. See `docs/verification/provider-capability-contract-2026-09-29.md`.
+
 Opt-in paid/network smoke checks:
 
 ```bash
