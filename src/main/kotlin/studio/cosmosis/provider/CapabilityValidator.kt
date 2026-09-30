@@ -53,7 +53,7 @@ object CapabilityValidator {
 
         if(req.imageSize) {
             val value=request.metadata["imageSize"].orEmpty()
-            require(value.isNotBlank()){"Image size metadata must not be blank"}
+            if(value.isBlank()) throw CapabilityException("Image size metadata must not be blank")
             if(caps.imageSizes.isEmpty()) mismatch(model,"imageSizes","metadata.imageSize",caps)
             if(value !in caps.imageSizes) throw CapabilityException("Image size '$value' is unsupported; choose ${caps.imageSizes.joinToString()}.")
         }
@@ -62,7 +62,7 @@ object CapabilityValidator {
             if(!caps.searchGrounding) mismatch(model,"searchGrounding","metadata.searchGrounding",caps)
         }
         if(req.thinkingConfiguration) {
-            require(request.metadata.getValue("thinkingLevel").isNotBlank()){"metadata.thinkingLevel must not be blank"}
+            if(request.metadata.getValue("thinkingLevel").isBlank()) throw CapabilityException("metadata.thinkingLevel must not be blank")
             if(!caps.thinkingConfiguration) mismatch(model,"thinkingConfiguration","metadata.thinkingLevel",caps)
         }
         if(req.interactionStorage) {
@@ -75,8 +75,8 @@ object CapabilityValidator {
                 throw CapabilityException("Unsupported openAiWorkflow '$workflow'; only 'responses' is a declared provider workflow")
             }
             if(request.metadata.containsKey("reasoningModel")) {
-                require(!request.metadata["reasoningModel"].isNullOrBlank()){"metadata.reasoningModel must not be blank"}
-                require(workflow?.equals("responses",true)==true){"metadata.reasoningModel requires metadata.openAiWorkflow=responses"}
+                if(request.metadata["reasoningModel"].isNullOrBlank()) throw CapabilityException("metadata.reasoningModel must not be blank")
+                if(workflow?.equals("responses",true)!=true) throw CapabilityException("metadata.reasoningModel requires metadata.openAiWorkflow=responses")
             }
             if(!caps.responsesImageGeneration) mismatch(model,"responsesImageGeneration",if(workflow!=null)"metadata.openAiWorkflow" else "metadata.reasoningModel",caps)
         }
@@ -84,17 +84,17 @@ object CapabilityValidator {
             if(!caps.outputCompression) mismatch(model,"outputCompression","metadata.compression",caps)
             val raw=request.metadata.getValue("compression")
             val value=raw.toIntOrNull()?:throw CapabilityException("Output compression must be an integer from 0 to 100")
-            require(value in 0..100){"Output compression must be between 0 and 100"}
-            require(request.outputFormat.lowercase() in setOf("jpeg","webp")){"Output compression is only valid for JPEG or WebP"}
+            if(value !in 0..100) throw CapabilityException("Output compression must be between 0 and 100")
+            if(request.outputFormat.lowercase() !in setOf("jpeg","webp")) throw CapabilityException("Output compression is only valid for JPEG or WebP")
         }
         if(req.sizePreset) {
             if(!caps.customDimensions) mismatch(model,"customDimensions","metadata.size",caps)
-            require(!request.metadata["size"].isNullOrBlank()){"metadata.size must not be blank"}
-            require(request.width==null&&request.height==null){"metadata.size cannot be combined with explicit width/height"}
+            if(request.metadata["size"].isNullOrBlank()) throw CapabilityException("metadata.size must not be blank")
+            if(request.width!=null||request.height!=null) throw CapabilityException("metadata.size cannot be combined with explicit width/height")
         }
 
         if(req.continuation) {
-            require(!request.previousResponseId.isNullOrBlank()){"previousResponseId must not be blank"}
+            if(request.previousResponseId.isNullOrBlank()) throw CapabilityException("previousResponseId must not be blank")
             if(!caps.multiTurnEditing) mismatch(model,"multiTurnEditing","previousResponseId",caps)
             if(caps.continuationProtocol==ContinuationProtocol.NONE) mismatch(model,"continuationProtocol","previousResponseId",caps)
             if(caps.continuationProtocol==ContinuationProtocol.OPENAI_RESPONSES &&
