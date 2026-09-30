@@ -66,3 +66,10 @@ val acceptanceSmoke by tasks.registering(JavaExec::class) {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("studio.cosmosis.AcceptanceSmokeKt")
 }
+
+val providerContractSmoke by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Offline loopback contract smoke for OpenAI, Gemini and LiteLLM HTTP adapters."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("studio.cosmosis.provider.ProviderContractSmokeKt")
+}
