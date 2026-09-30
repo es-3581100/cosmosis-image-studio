@@ -30,6 +30,22 @@ jobs:
         run: ./scripts/static-audit.sh
       - name: Dependency-resolved tests and acceptance
         run: gradle --no-daemon test acceptanceSmoke :orml-runner:installDist :orml-runner-u2net:installDist :orml-runner-bodypix:installDist :orml-runner-classifier:installDist :orml-runner-super-resolution:installDist --stacktrace
+      - name: Offline provider transport contract
+        env:
+          COSMOSIS_PROVIDER_CONTRACT_REPORT: "build/provider-contract/report.txt"
+        run: |
+          gradle --no-daemon providerContractSmoke --stacktrace
+          grep -F "PROVIDER_CONTRACT_SMOKE_PASS" build/provider-contract/report.txt
+          grep -F "network=loopback-only" build/provider-contract/report.txt
+          grep -F "requests=9" build/provider-contract/report.txt
+          cat build/provider-contract/report.txt
+      - name: Preserve provider contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosis-provider-contract
+          path: build/provider-contract/
+          if-no-files-found: warn
       - name: ORML runner distribution smoke
         run: |
           RUNNER="orml-runner/build/install/orml-runner/bin/orml-runner"
