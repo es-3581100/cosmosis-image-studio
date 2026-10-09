@@ -2,6 +2,7 @@ package studio.cosmosis.ui
 
 import org.openrndr.*
 import org.openrndr.color.ColorRGBa
+import org.openrndr.color.Linearity
 import org.openrndr.draw.ColorBuffer
 import org.openrndr.draw.loadFont
 import org.openrndr.draw.loadImage
@@ -26,14 +27,14 @@ import javax.swing.JTextArea
 import javax.swing.SwingUtilities
 import kotlin.math.min
 
-private fun java.awt.Color.toOrColor()=ColorRGBa(red/255.0,green/255.0,blue/255.0,alpha/255.0)
+private fun java.awt.Color.toOrColor()=ColorRGBa(red/255.0,green/255.0,blue/255.0,alpha/255.0,Linearity.SRGB)
 private val BG=OffworldTheme.background.toOrColor()
 private val FG=OffworldTheme.foreground.toOrColor()
 private val MUTED=OffworldTheme.muted.toOrColor()
 private val SECOND=OffworldTheme.secondary.toOrColor()
 private val GREEN=OffworldTheme.positive.toOrColor()
 private val RED=OffworldTheme.destructive.toOrColor()
-private val SURFACE=ColorRGBa(21/255.0,21/255.0,17/255.0,1.0)
+private val SURFACE=ColorRGBa.fromHex("#151511")
 
 data class WorkspaceSmokeConfig(
     val frames:Int=20,
@@ -198,17 +199,17 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
             val actions=mutableListOf<Pair<UiRect,()->Unit>>()
             fun uiButton(rect:UiRect,label:String,active:Boolean=false,primary:Boolean=false,action:()->Unit){
                 actions+=rect to action
-                drawer.stroke=if(active||primary)FG else ColorRGBa(1.0,1.0,227/255.0,.20);drawer.strokeWeight=if(active||primary)1.2 else 1.0
-                drawer.fill=when{primary->FG;active->ColorRGBa(1.0,1.0,227/255.0,.08);else->SURFACE}
+                drawer.stroke=if(active||primary)FG else FG.opacify(.20);drawer.strokeWeight=if(active||primary)1.2 else 1.0
+                drawer.fill=when{primary->FG;active->FG.opacify(.08);else->SURFACE}
                 drawer.rectangle(rect.x,rect.y,rect.width,rect.height)
                 if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=if(primary)BG else if(active)FG else MUTED;drawer.text(label,rect.x+8,rect.y+rect.height/2+4)}
             }
             // quiet technical grid
-            drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.035);drawer.strokeWeight=1.0
+            drawer.stroke=FG.opacify(.035);drawer.strokeWeight=1.0
             for(x in 82 until width-300 step 34)drawer.lineSegment(x.toDouble(),72.0,x.toDouble(),height-170.0)
             for(y in 72 until height-170 step 34)drawer.lineSegment(82.0,y.toDouble(),(width-300).toDouble(),y.toDouble())
             // workstation planes
-            drawer.fill=SURFACE;drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.12);drawer.rectangle(0.0,0.0,width.toDouble(),72.0);drawer.rectangle(0.0,72.0,82.0,(height-72).toDouble());drawer.rectangle((width-300).toDouble(),72.0,300.0,(height-72).toDouble());drawer.rectangle(82.0,(height-170).toDouble(),(width-382).toDouble(),120.0);drawer.rectangle(82.0,(height-50).toDouble(),(width-82).toDouble(),50.0)
+            drawer.fill=SURFACE;drawer.stroke=FG.opacify(.12);drawer.rectangle(0.0,0.0,width.toDouble(),72.0);drawer.rectangle(0.0,72.0,82.0,(height-72).toDouble());drawer.rectangle((width-300).toDouble(),72.0,300.0,(height-72).toDouble());drawer.rectangle(82.0,(height-170).toDouble(),(width-382).toDouble(),120.0);drawer.rectangle(82.0,(height-50).toDouble(),(width-82).toDouble(),50.0)
             if(mono!=null){
                 drawer.fontMap=mono;drawer.fill=FG;drawer.text("COSMOSIS / IMAGE STUDIO",21.0,30.0)
                 drawer.fontMap=monoSmall!!;drawer.fill=MUTED;drawer.text("${s.projectName}  /  ${s.currentVersion}",21.0,52.0)
@@ -244,15 +245,15 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                         val fitA=min(half/img.width,fieldH/img.height);val aw=img.width*fitA*zoom;val ah=img.height*fitA*zoom;val ax=fieldX+(half-aw)/2+pan.x;val ay=fieldY+(fieldH-ah)/2+pan.y
                         drawer.image(img,ax,ay,aw,ah)
                         compareImage?.let{cmp->val fitB=min(half/cmp.width,fieldH/cmp.height);val bw=cmp.width*fitB*zoom;val bh=cmp.height*fitB*zoom;val bx=fieldX+half+gap+(half-bw)/2+pan.x;val by=fieldY+(fieldH-bh)/2+pan.y;drawer.image(cmp,bx,by,bw,bh)}
-                        drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.18);drawer.lineSegment(fieldX+half+gap/2,fieldY,fieldX+half+gap/2,fieldY+fieldH)
+                        drawer.stroke=FG.opacify(.18);drawer.lineSegment(fieldX+half+gap/2,fieldY,fieldX+half+gap/2,fieldY+fieldH)
                         if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("CURRENT",fieldX,fieldY+14);drawer.text("COMPARE",fieldX+half+gap,fieldY+14)}
                         Unit
                     } else {
                         val fit=min(fieldW/img.width,fieldH/img.height);val dw=img.width*fit*zoom;val dh=img.height*fit*zoom;val x=fieldX+(fieldW-dw)/2+pan.x;val y=fieldY+(fieldH-dh)/2+pan.y
-                        drawer.image(img,x,y,dw,dh);drawer.fill=null;drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.55);val m=12.0;drawer.lineSegment(x,y,x+m,y);drawer.lineSegment(x,y,x,y+m);drawer.lineSegment(x+dw,y,x+dw-m,y);drawer.lineSegment(x+dw,y,x+dw,y+m);drawer.lineSegment(x,y+dh,x+m,y+dh);drawer.lineSegment(x,y+dh,x,y+dh-m);drawer.lineSegment(x+dw,y+dh,x+dw-m,y+dh);drawer.lineSegment(x+dw,y+dh,x+dw,y+dh-m)
+                        drawer.image(img,x,y,dw,dh);drawer.fill=null;drawer.stroke=FG.opacify(.55);val m=12.0;drawer.lineSegment(x,y,x+m,y);drawer.lineSegment(x,y,x,y+m);drawer.lineSegment(x+dw,y,x+dw-m,y);drawer.lineSegment(x+dw,y,x+dw,y+m);drawer.lineSegment(x,y+dh,x+m,y+dh);drawer.lineSegment(x,y+dh,x,y+dh-m);drawer.lineSegment(x+dw,y+dh,x+dw-m,y+dh);drawer.lineSegment(x+dw,y+dh,x+dw,y+dh-m)
                         s.maskOverlayPath?.takeIf{s.maskVisible}?.let{mp->if(mp!=maskLoaded){runCatching{mask?.destroy();mask=loadImage(mp);maskLoaded=mp}};mask?.let{drawer.image(it,x,y,dw,dh)}}
                         if(s.analysisVisible&&s.analysisRegions.isNotEmpty()){
-                            drawer.fill=null;drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.62);drawer.strokeWeight=1.0
+                            drawer.fill=null;drawer.stroke=FG.opacify(.62);drawer.strokeWeight=1.0
                             s.analysisRegions.take(80).forEachIndexed{index,r->
                                 val rx=x+(r.x.toDouble()/img.width)*dw;val ry=y+(r.y.toDouble()/img.height)*dh
                                 val rw=(r.width.toDouble()/img.width)*dw;val rh=(r.height.toDouble()/img.height)*dh
@@ -276,13 +277,13 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                 val layout=VersionGraphLayout.layout(nodes)
                 val byId=layout.associateBy{it.id}
                 val gx0=110.0;val gx1=(width-338).toDouble();val gy0=(height-128).toDouble();val gy1=(height-67).toDouble()
-                drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.22);drawer.strokeWeight=1.0
+                drawer.stroke=FG.opacify(.22);drawer.strokeWeight=1.0
                 layout.forEach{pt->pt.parentId?.let{pid->byId[pid]?.let{parent->
                     val px=gx0+(gx1-gx0)*parent.x;val py=gy0+(gy1-gy0)*parent.y
                     val cx=gx0+(gx1-gx0)*pt.x;val cy=gy0+(gy1-gy0)*pt.y
                     val elbow=(px+cx)/2.0;drawer.lineSegment(px,py,elbow,py);drawer.lineSegment(elbow,py,elbow,cy);drawer.lineSegment(elbow,cy,cx,cy)
                 }}}
-                layout.forEach{pt->val x=gx0+(gx1-gx0)*pt.x;val y=gy0+(gy1-gy0)*pt.y;val active=pt.id==s.currentVersion;drawer.stroke=if(active)FG else ColorRGBa(1.0,1.0,227/255.0,.28);drawer.fill=if(active)FG else SURFACE;drawer.rectangle(x-4,y-4,8.0,8.0);if(active){drawer.fill=FG;drawer.text(pt.id.takeLast(6),x+8,y+4)}}
+                layout.forEach{pt->val x=gx0+(gx1-gx0)*pt.x;val y=gy0+(gy1-gy0)*pt.y;val active=pt.id==s.currentVersion;drawer.stroke=if(active)FG else FG.opacify(.28);drawer.fill=if(active)FG else SURFACE;drawer.rectangle(x-4,y-4,8.0,8.0);if(active){drawer.fill=FG;drawer.text(pt.id.takeLast(6),x+8,y+4)}}
             }
             if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("${s.imageWidth}×${s.imageHeight}  │  ${"%.0f".format(zoom*100)}%  │  ${s.workflowMode.name}  │  REF ${s.referencePaths.size}  │  MASK ${if(s.maskPath==null)"off" else if(s.maskVisible)"visible" else "hidden"}  │  ${s.message}",103.0,(height-20).toDouble())}
             uiActions=actions
