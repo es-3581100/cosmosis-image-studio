@@ -19,6 +19,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import javax.imageio.ImageIO
+import javax.swing.JFileChooser
+import javax.swing.JOptionPane
+import javax.swing.JScrollPane
+import javax.swing.JTextArea
 import javax.swing.SwingUtilities
 import kotlin.math.min
 
@@ -50,13 +54,13 @@ private fun brightNeutral(rgb:Int):Boolean {
 private fun sha256(path:Path):String=MessageDigest.getInstance("SHA-256")
     .digest(Files.readAllBytes(path)).joinToString(""){"%02x".format(it)}
 
-private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,frame:Long,workspaceWidth:Int,workspaceHeight:Int):Boolean{
+private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock?,frame:Long,workspaceWidth:Int,workspaceHeight:Int):Boolean{
     config.reportPath.parent?.let{Files.createDirectories(it)}
     config.screenshotPath.parent?.let{Files.createDirectories(it)}
     val errors=mutableListOf<String>()
     val size=Toolkit.getDefaultToolkit().screenSize
     if(size.width<=0||size.height<=0)errors+="virtual display has invalid dimensions"
-    if(!dock.isShowing)errors+="Swing control dock is not showing"
+    if(dock!=null&&!dock.isShowing)errors+="Swing control dock is not showing"
     var dark=0L;var ivory=0L;var sampled=0L;var screenshotHash="unavailable"
     var dockSampled=0L;var dockDark=0L;var dockBrightNeutral=0L
     runCatching{
@@ -67,36 +71,39 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
             if(near(rgb,OffworldTheme.background))dark++
             if(near(rgb,OffworldTheme.foreground))ivory++
         }
-        val db=dock.bounds
-        val x0=db.x.coerceAtLeast(0);val y0=db.y.coerceAtLeast(0)
-        val x1=(db.x+db.width).coerceAtMost(capture.width);val y1=(db.y+db.height).coerceAtMost(capture.height)
-        for(y in y0 until y1 step 3)for(x in x0 until x1 step 3){
-            val rgb=capture.getRGB(x,y);dockSampled++
-            if(near(rgb,OffworldTheme.background,22)||near(rgb,Color(0x13,0x13,0x10),22)||near(rgb,Color(0x1C,0x1C,0x18),22))dockDark++
-            if(brightNeutral(rgb))dockBrightNeutral++
+        dock?.let{d->
+            val db=d.bounds
+            val x0=db.x.coerceAtLeast(0);val y0=db.y.coerceAtLeast(0)
+            val x1=(db.x+db.width).coerceAtMost(capture.width);val y1=(db.y+db.height).coerceAtMost(capture.height)
+            for(y in y0 until y1 step 3)for(x in x0 until x1 step 3){
+                val rgb=capture.getRGB(x,y);dockSampled++
+                if(near(rgb,OffworldTheme.background,22)||near(rgb,Color(0x13,0x13,0x10),22)||near(rgb,Color(0x1C,0x1C,0x18),22))dockDark++
+                if(brightNeutral(rgb))dockBrightNeutral++
+            }
         }
         screenshotHash=sha256(config.screenshotPath)
     }.onFailure{errors+="screenshot: "+(it.message?:it.javaClass.simpleName)}
     if(OffworldTheme.radius!=0)errors+="Offworld hard-corner authority regressed"
     if(dark<=1000)errors+="Offworld warm-dark surface not visible enough (count=$dark)"
     if(ivory<=10)errors+="Offworld ivory foreground not visible enough (count=$ivory)"
-    if(dockSampled<=1000)errors+="Control dock capture too small to evaluate"
-    if(dockSampled>0&&dockDark*100<dockSampled*45)errors+="Control dock is not predominantly Offworld-dark (dark=$dockDark sampled=$dockSampled)"
-    if(dockSampled>0&&dockBrightNeutral*100>dockSampled*3)errors+="Control dock contains too much bright neutral native chrome (bright=$dockBrightNeutral sampled=$dockSampled)"
+    if(dock!=null&&dockSampled<=1000)errors+="Control dock capture too small to evaluate"
+    if(dock!=null&&dockSampled>0&&dockDark*100<dockSampled*45)errors+="Control dock is not predominantly Offworld-dark (dark=$dockDark sampled=$dockSampled)"
+    if(dock!=null&&dockSampled>0&&dockBrightNeutral*100>dockSampled*3)errors+="Control dock contains too much bright neutral native chrome (bright=$dockBrightNeutral sampled=$dockSampled)"
     val passed=errors.isEmpty()
     val report=buildString{
         appendLine(if(passed)"UI_SMOKE_PASS" else "UI_SMOKE_FAIL")
+        appendLine("layout.mode="+if(dock==null)"single-window" else "dual-window-legacy")
         appendLine("frame=$frame")
         appendLine("workspace=${workspaceWidth}x$workspaceHeight")
         appendLine("desktop=${size.width}x${size.height}")
-        appendLine("dock.showing=${dock.isShowing}")
+        appendLine("dock.showing=${dock?.isShowing==true}")
         appendLine("theme.background=#10100E")
         appendLine("theme.foreground=#FFFFE3")
         appendLine("theme.radius=${OffworldTheme.radius}")
         appendLine("sampled=$sampled")
         appendLine("warmDarkPixels=$dark")
         appendLine("ivoryPixels=$ivory")
-        appendLine("dock.bounds=${dock.x},${dock.y},${dock.width},${dock.height}")
+        if(dock!=null)appendLine("dock.bounds=${dock.x},${dock.y},${dock.width},${dock.height}")
         appendLine("dock.sampled=$dockSampled")
         appendLine("dock.darkPixels=$dockDark")
         appendLine("dock.brightNeutralPixels=$dockBrightNeutral")
@@ -108,14 +115,14 @@ private fun writeWorkspaceSmoke(config:WorkspaceSmokeConfig,dock:ControlDock,fra
     return passed
 }
 
-fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDock,smoke:WorkspaceSmokeConfig?=null)=application {
+fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDock?=null,smoke:WorkspaceSmokeConfig?=null)=application {
     val desktop=Toolkit.getDefaultToolkit().screenSize
-    val rightOfDock=dock.x+dock.width+20
-    val tileBesideDock=desktop.width>=rightOfDock+960
-    val workspaceX=if(tileBesideDock)rightOfDock else 20
-    val workspaceY=if(tileBesideDock)dock.y.coerceAtLeast(20) else 20
-    val workspaceWidth=if(tileBesideDock)minOf(1480,desktop.width-workspaceX-20) else minOf(1480,(desktop.width-40).coerceAtLeast(640))
-    val workspaceHeight=minOf(900,(desktop.height-workspaceY-20).coerceAtLeast(640))
+    val rightOfDock=dock?.let{it.x+it.width+20}?:20
+    val tileBesideDock=dock!=null&&desktop.width>=rightOfDock+960
+    val workspaceX=if(dock==null)14 else if(tileBesideDock)rightOfDock else 20
+    val workspaceY=if(dock==null)14 else if(tileBesideDock)dock.y.coerceAtLeast(20) else 20
+    val workspaceWidth=if(dock==null)minOf(1560,(desktop.width-28).coerceAtLeast(960)) else if(tileBesideDock)minOf(1480,desktop.width-workspaceX-20) else minOf(1480,(desktop.width-40).coerceAtLeast(640))
+    val workspaceHeight=if(dock==null)minOf(960,(desktop.height-72).coerceAtLeast(640)) else minOf(900,(desktop.height-workspaceY-20).coerceAtLeast(640))
     configure { width=workspaceWidth;height=workspaceHeight;title="COSMOSIS / IMAGE STUDIO";position=IntVector2(workspaceX,workspaceY) }
     program {
         val monoPath=listOf("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf","/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf").firstOrNull{Files.exists(Path.of(it))}
@@ -124,14 +131,61 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
         var loadedPath:String?=null;var image:ColorBuffer?=null;var compareLoaded:String?=null;var compareImage:ColorBuffer?=null;var maskLoaded:String?=null;var mask:ColorBuffer?=null
         var pan=Vector2.ZERO;var zoom=1.0;var lastDrag:Vector2?=null
         var smokeDone=false
-        window.drop.listen { dropped -> dropped.files.firstOrNull{File(it).extension.lowercase() in listOf("png","jpg","jpeg","webp") }?.let{runCatching{controller.importImage(Path.of(it))}} }
+        var legacyDock:ControlDock?=dock
+        var uiActions:List<Pair<UiRect,()->Unit>> = emptyList()
+        fun showError(t:Throwable){
+            val message=t.message?:t.toString()
+            state.update{it.copy(message="ERROR / "+message)}
+            SwingUtilities.invokeLater{JOptionPane.showMessageDialog(null,message,"COSMOSIS / ERROR",JOptionPane.ERROR_MESSAGE)}
+        }
+        fun chooseProject(create:Boolean){SwingUtilities.invokeLater{
+            val fc=JFileChooser().apply{dialogTitle=if(create)"COSMOSIS / NEW LOCAL PROJECT" else "COSMOSIS / OPEN PROJECT";fileSelectionMode=JFileChooser.DIRECTORIES_ONLY}
+            if(fc.showOpenDialog(null)!=JFileChooser.APPROVE_OPTION)return@invokeLater
+            runCatching{if(create)controller.createProject(fc.selectedFile.toPath(),fc.selectedFile.name)else controller.openProject(fc.selectedFile.toPath())}.onFailure(::showError)
+        }}
+        fun chooseImage(reference:Boolean=false){SwingUtilities.invokeLater{
+            val fc=JFileChooser().apply{dialogTitle=if(reference)"COSMOSIS / ADD REFERENCE" else "COSMOSIS / IMPORT IMAGE";isMultiSelectionEnabled=reference}
+            if(fc.showOpenDialog(null)!=JFileChooser.APPROVE_OPTION)return@invokeLater
+            runCatching{
+                if(reference){val xs=fc.selectedFiles.takeIf{it.isNotEmpty()}?.toList()?:listOfNotNull(fc.selectedFile);xs.forEach{controller.addReferenceImage(it.toPath())}}
+                else controller.importImage(fc.selectedFile.toPath())
+            }.onFailure(::showError)
+        }}
+        fun runCurrent(){
+            val s=state.get()
+            runCatching{
+                when(s.workflowMode){
+                    studio.cosmosis.WorkflowMode.IMAGE_TO_PROMPT->controller.analyzeCurrent()
+                    studio.cosmosis.WorkflowMode.UPSCALE->controller.upscaleCurrent(2)
+                    studio.cosmosis.WorkflowMode.AGENT_BUILD->{require(s.promptBody.isNotBlank()){"Describe the Agent Build task in the prompt"};controller.runAgentBuild(s.promptBody,s.provider.lowercase(),s.model)}
+                    else->{
+                        require(s.promptBody.isNotBlank()){"Prompt is empty"}
+                        val editing=s.workflowMode in setOf(studio.cosmosis.WorkflowMode.EDIT_EXISTING,studio.cosmosis.WorkflowMode.MASK_EDIT,studio.cosmosis.WorkflowMode.REFERENCE_REMIX,studio.cosmosis.WorkflowMode.STYLE_TRANSFER,studio.cosmosis.WorkflowMode.BACKGROUND_REPLACE,studio.cosmosis.WorkflowMode.SUBJECT_PRESERVE)
+                        controller.generate(s.promptBody,s.provider.lowercase(),s.model,edit=editing,workflowMode=s.workflowMode)
+                    }
+                }
+            }.onFailure(::showError)
+        }
+        fun editPrompt(runAfter:Boolean=false){SwingUtilities.invokeLater{
+            val area=JTextArea(state.get().promptBody,14,60).apply{lineWrap=true;wrapStyleWord=true}
+            val result=JOptionPane.showConfirmDialog(null,JScrollPane(area),"COSMOSIS / PROMPT",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)
+            if(result==JOptionPane.OK_OPTION){state.update{it.copy(promptBody=area.text,message="PROMPT / EDITED")};if(runAfter)runCurrent()}
+        }}
+        fun openAdvanced(){SwingUtilities.invokeLater{
+            val current=legacyDock
+            if(current==null||!current.isDisplayable)legacyDock=ControlDock(controller,state)else{current.isVisible=true;current.toFront();current.requestFocus()}
+        }}
+        window.drop.listen { dropped -> dropped.files.firstOrNull{File(it).extension.lowercase() in listOf("png","jpg","jpeg","webp") }?.let{runCatching{controller.importImage(Path.of(it))}.onFailure(::showError)} }
         mouse.scrolled.listen { zoom=(zoom*(if(it.rotation.y<0)1.1 else .9)).coerceIn(.1,8.0);state.update{s->s.copy(zoom=zoom)} }
-        mouse.buttonDown.listen { lastDrag=it.position }
+        mouse.buttonDown.listen { ev ->
+            val action=uiActions.lastOrNull{it.first.contains(ev.position)}
+            if(action!=null){lastDrag=null;action.second.invoke()}else lastDrag=ev.position
+        }
         mouse.buttonUp.listen { lastDrag=null }
         mouse.dragged.listen { val prev=lastDrag?:it.position;pan += it.position-prev;lastDrag=it.position;state.update{s->s.copy(panX=pan.x,panY=pan.y)} }
         keyboard.keyDown.listen { ev -> val ctrl=ev.modifiers.any { it.name=="CTRL" || it.name=="META" || it.name=="SUPER" };when {
-            ctrl && ev.name=="k" -> SwingUtilities.invokeLater{dock.openCommandPalette()}
-            ctrl && ev.name=="enter" -> { val s=state.get();if(s.promptBody.isNotBlank())runCatching{controller.generate(s.promptBody,s.provider.lowercase(),s.model)} }
+            ctrl && ev.name=="k" -> if(dock!=null)SwingUtilities.invokeLater{dock.openCommandPalette()}else editPrompt(false)
+            ctrl && ev.name=="enter" -> runCurrent()
             ev.name=="g" -> controller.setWorkflowMode(studio.cosmosis.WorkflowMode.QUICK_GENERATE)
             ev.name=="e" -> controller.setWorkflowMode(studio.cosmosis.WorkflowMode.EDIT_EXISTING)
             ev.name=="m" -> controller.setWorkflowMode(studio.cosmosis.WorkflowMode.MASK_EDIT)
@@ -141,14 +195,43 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
         } }
         extend {
             val s=state.get();drawer.clear(BG)
+            val actions=mutableListOf<Pair<UiRect,()->Unit>>()
+            fun uiButton(rect:UiRect,label:String,active:Boolean=false,primary:Boolean=false,action:()->Unit){
+                actions+=rect to action
+                drawer.stroke=if(active||primary)FG else ColorRGBa(1.0,1.0,227/255.0,.20);drawer.strokeWeight=if(active||primary)1.2 else 1.0
+                drawer.fill=when{primary->FG;active->ColorRGBa(1.0,1.0,227/255.0,.08);else->SURFACE}
+                drawer.rectangle(rect.x,rect.y,rect.width,rect.height)
+                if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=if(primary)BG else if(active)FG else MUTED;drawer.text(label,rect.x+8,rect.y+rect.height/2+4)}
+            }
             // quiet technical grid
             drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.035);drawer.strokeWeight=1.0
             for(x in 82 until width-300 step 34)drawer.lineSegment(x.toDouble(),72.0,x.toDouble(),height-170.0)
             for(y in 72 until height-170 step 34)drawer.lineSegment(82.0,y.toDouble(),(width-300).toDouble(),y.toDouble())
             // workstation planes
             drawer.fill=SURFACE;drawer.stroke=ColorRGBa(1.0,1.0,227/255.0,.12);drawer.rectangle(0.0,0.0,width.toDouble(),72.0);drawer.rectangle(0.0,72.0,82.0,(height-72).toDouble());drawer.rectangle((width-300).toDouble(),72.0,300.0,(height-72).toDouble());drawer.rectangle(82.0,(height-170).toDouble(),(width-382).toDouble(),120.0);drawer.rectangle(82.0,(height-50).toDouble(),(width-82).toDouble(),50.0)
-            if(mono!=null){drawer.fontMap=mono;drawer.fill=FG;drawer.text("COSMOSIS / IMAGE STUDIO",21.0,30.0);drawer.fontMap=monoSmall!!;drawer.fill=MUTED;drawer.text("${s.projectName}  /  ${s.currentVersion}",21.0,52.0);drawer.text("${s.provider} / ${s.model}",(width-560).toDouble(),30.0);drawer.fill=if(s.jobState=="FAILED")RED else if(s.jobState=="COMPLETE")GREEN else FG;drawer.text("JOB ${s.jobState}",(width-180).toDouble(),30.0)}
-            val tools=listOf("SEL","MASK","CROP","AI","FIT","CMP");if(monoSmall!=null){drawer.fontMap=monoSmall;tools.forEachIndexed{i,t->drawer.fill=if(t==s.selectedTool)FG else MUTED;drawer.text(t,23.0,118.0+i*54)}}
+            if(mono!=null){
+                drawer.fontMap=mono;drawer.fill=FG;drawer.text("COSMOSIS / IMAGE STUDIO",21.0,30.0)
+                drawer.fontMap=monoSmall!!;drawer.fill=MUTED;drawer.text("${s.projectName}  /  ${s.currentVersion}",21.0,52.0)
+                if(dock!=null)drawer.text("${s.provider} / ${s.model}",(width-560).toDouble(),30.0)
+                drawer.fill=if(s.jobState=="FAILED")RED else if(s.jobState=="COMPLETE")GREEN else FG;drawer.text("JOB ${s.jobState}",(width-180).toDouble(),30.0)
+            }
+            if(dock==null){
+                var bx=285.0
+                fun head(label:String,w:Double=62.0,primary:Boolean=false,action:()->Unit){if(bx+w<width-190){uiButton(UiRect(bx,16.0,w,32.0),label,primary=primary,action=action);bx+=w+5}}
+                head("NEW"){chooseProject(true)};head("OPEN"){chooseProject(false)};head("IMPORT",70.0){chooseImage(false)};head("REF +"){chooseImage(true)};head("PROMPT",72.0){editPrompt(false)};head("RUN",58.0,true){runCurrent()};head("ADV ↗",66.0){openAdvanced()}
+            }
+            val workflowTools=listOf(
+                "GEN" to studio.cosmosis.WorkflowMode.QUICK_GENERATE,
+                "EDIT" to studio.cosmosis.WorkflowMode.EDIT_EXISTING,
+                "MASK" to studio.cosmosis.WorkflowMode.MASK_EDIT,
+                "REMIX" to studio.cosmosis.WorkflowMode.REFERENCE_REMIX,
+                "AI" to studio.cosmosis.WorkflowMode.IMAGE_TO_PROMPT,
+                "FIT" to studio.cosmosis.WorkflowMode.UPSCALE
+            )
+            workflowTools.forEachIndexed{i,(label,mode)->
+                uiButton(UiRect(10.0,91.0+i*50.0,62.0,38.0),label,active=s.workflowMode==mode){controller.setWorkflowMode(mode)}
+            }
+            if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=SECOND;drawer.text("WORKFLOW",14.0,82.0)}
             // image field / split compare instrument
             s.imagePath?.let { p ->
                 if(p!=loadedPath){runCatching{image?.destroy();image=loadImage(p);loadedPath=p}}
@@ -182,7 +265,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                 }
             } ?: run {
                 if(serif!=null){drawer.fontMap=serif;drawer.fill=FG;drawer.text("No image loaded",width/2.0-100,height/2.0-15)}
-                if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("DROP IMAGE HERE  /  or use Control → Import Image",width/2.0-150,height/2.0+15)}
+                if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("DROP IMAGE HERE  /  or choose IMPORT above",width/2.0-150,height/2.0+15)}
             }
             // inspector
             if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("// INSPECTOR",(width-278).toDouble(),105.0);drawer.fill=FG;drawer.text("PROMPT",(width-278).toDouble(),140.0);drawer.fill=MUTED;val preview=s.promptBody.replace('\n',' ').take(220);preview.chunked(34).take(6).forEachIndexed{i,line->drawer.text(line,(width-278).toDouble(),164.0+i*16)};drawer.fill=FG;drawer.text("REFERENCES",(width-278).toDouble(),285.0);drawer.fill=MUTED;drawer.text((if(s.imagePath==null)0 else 1).toString()+" source + "+s.referencePaths.size+" attached",(width-278).toDouble(),307.0);drawer.fill=FG;drawer.text("WORKFLOW",(width-278).toDouble(),333.0);drawer.fill=MUTED;drawer.text(s.workflowMode.name,(width-278).toDouble(),351.0);drawer.fill=FG;drawer.text("MASK",(width-278).toDouble(),382.0);drawer.fill=if(s.maskPath==null)MUTED else GREEN;drawer.text(if(s.maskPath==null)"○ OFF" else if(s.maskVisible)"● ACTIVE / VISIBLE" else "● ACTIVE / HIDDEN",(width-278).toDouble(),404.0);drawer.fill=FG;drawer.text("ANALYSIS",(width-278).toDouble(),446.0);drawer.fill=if(s.analysisVisible&&s.analysisRegions.isNotEmpty())FG else MUTED;drawer.text(if(s.analysisRegions.isEmpty())"○ NONE" else (if(s.analysisVisible)"● "+s.analysisRegions.size+" REGION(S)" else "● HIDDEN"),(width-278).toDouble(),468.0);drawer.fill=FG;drawer.text("WORKERS",(width-278).toDouble(),505.0);s.jobs.takeLast(7).forEachIndexed{i,j->drawer.fill=if(j.state==JobState.COMPLETE)GREEN else if(j.state==JobState.FAILED)RED else MUTED;drawer.text("${j.type.take(16)}  ${j.state}",(width-278).toDouble(),529.0+i*18)} }
@@ -202,6 +285,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                 layout.forEach{pt->val x=gx0+(gx1-gx0)*pt.x;val y=gy0+(gy1-gy0)*pt.y;val active=pt.id==s.currentVersion;drawer.stroke=if(active)FG else ColorRGBa(1.0,1.0,227/255.0,.28);drawer.fill=if(active)FG else SURFACE;drawer.rectangle(x-4,y-4,8.0,8.0);if(active){drawer.fill=FG;drawer.text(pt.id.takeLast(6),x+8,y+4)}}
             }
             if(monoSmall!=null){drawer.fontMap=monoSmall;drawer.fill=MUTED;drawer.text("${s.imageWidth}×${s.imageHeight}  │  ${"%.0f".format(zoom*100)}%  │  ${s.workflowMode.name}  │  REF ${s.referencePaths.size}  │  MASK ${if(s.maskPath==null)"off" else if(s.maskVisible)"visible" else "hidden"}  │  ${s.message}",103.0,(height-20).toDouble())}
+            uiActions=actions
             if(smoke!=null&&!smokeDone&&frameCount.toLong()>=smoke.frames.toLong()){
                 smokeDone=true
                 runCatching{writeWorkspaceSmoke(smoke,dock,frameCount.toLong(),width,height)}
@@ -209,7 +293,7 @@ fun launchWorkspace(state:StudioState,controller:StudioController,dock:ControlDo
                         smoke.reportPath.parent?.let{Files.createDirectories(it)}
                         Files.writeString(smoke.reportPath,"UI_SMOKE_FAIL\nerror="+(e.message?:e.javaClass.simpleName)+"\n")
                     }
-                SwingUtilities.invokeLater{dock.dispose()}
+                dock?.let{d->SwingUtilities.invokeLater{d.dispose()}}
                 application.exit()
             }
         }
