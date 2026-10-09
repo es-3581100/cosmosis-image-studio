@@ -2,11 +2,13 @@ package studio.cosmosis
 
 import studio.cosmosis.ui.*
 import java.nio.file.Path
+import javax.swing.SwingUtilities
 
 fun main(){
     val state=StudioState();val controller=StudioController(state)
     val legacyDock=System.getenv("COSMOSIS_LEGACY_CONTROL_DOCK")=="1"
-    val dock=if(legacyDock)ControlDock(controller,state) else null
+    var dock:ControlDock?=null
+    if(legacyDock)SwingUtilities.invokeAndWait{dock=ControlDock(controller,state)}
     val smoke=if(System.getenv("COSMOSIS_UI_SMOKE")=="1") WorkspaceSmokeConfig(
         frames=(System.getenv("COSMOSIS_UI_SMOKE_FRAMES")?:"20").toIntOrNull()?.coerceIn(3,240)?:20,
         reportPath=Path.of(System.getenv("COSMOSIS_UI_SMOKE_REPORT")?:"build/ui-smoke/report.txt"),
