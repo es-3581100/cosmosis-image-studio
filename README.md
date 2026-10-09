@@ -16,9 +16,15 @@ Requirements: JDK 21 and Gradle 9.8+. The repository intentionally does not vend
 
 ### Graphical workstation smoke
 
-Normal CI also launches the real OPENRNDR + Swing workstation under Xvfb using the GLFW backend and Mesa llvmpipe. The smoke captures the desktop, verifies the ControlDock is visible, checks the authoritative Offworld background/foreground/hard-corner tokens, and rejects regressions where native bright control chrome dominates the Swing surface.
+The default desktop is now a single persistent OPENRNDR workstation. Project actions and the primary workflow rail live in the canvas shell; the former Swing `ControlDock` is no longer opened at startup. It remains available as an explicit advanced/legacy surface through `ADV ↗` or `COSMOSIS_LEGACY_CONTROL_DOCK=1`.
 
-PR #14 run `36644212766` verified the repaired two-window layout and dark control surface on Linux x86_64. The checkpoint, exact pixel metrics, screenshot hash, and limitations are recorded in `docs/verification/ui-runtime-2026-09-29.md`.
+The single-window hierarchy is derived from the Math-by-Design reference rather than copied from one of its visual examples: the image stage owns attention, `RUN` is the one bright primary action, workflow choice is a stable left-rail state, inspector metadata stays secondary, and version lineage remains low in the frame. Existing Offworld material/color authority is preserved.
+
+Normal CI launches the real workstation under Xvfb with the GLFW backend and Mesa llvmpipe. It requires `layout.mode=single-window`, `dock.showing=false`, the authoritative Offworld background/foreground/hard-corner tokens, and a non-empty screenshot.
+
+PR #17 implementation run `38005546497` passed the graphical smoke with `149824` sampled warm-dark pixels, `274` ivory pixels, and screenshot SHA-256 `c9d69af12a68cc3efb42b9bf45acc6af5a4f097b6f6f93d4bdef1874a1b6905c`. The design provenance, color-space correction, and remaining advanced-window boundary are recorded in `docs/verification/ui-single-window-math-by-design-2026-10-09.md`.
+
+The earlier PR #14 two-window checkpoint remains historical evidence in `docs/verification/ui-runtime-2026-09-29.md`; it is no longer the default launch contract.
 
 ### Offline provider contract smoke
 
