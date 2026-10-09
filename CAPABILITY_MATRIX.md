@@ -2,7 +2,7 @@
 
 | Capability | State in this build | Evidence / boundary |
 |---|---|---|
-| Offworld OPENRNDR workspace | Verified graphical runtime on Linux x86_64 CI | `ui/OpenrndrWorkspace.kt` + Swing `ControlDock`; PR #14 run `36644212766` launched the real GLFW/OpenGL workstation under Xvfb, captured both tiled windows, enforced Offworld hard-corner/dark-surface metrics, and passed; [checkpoint](docs/verification/ui-runtime-2026-09-29.md) |
+| Offworld OPENRNDR workspace | Verified single-window graphical runtime on Linux x86_64 CI | Default startup is one persistent OPENRNDR workstation; `ControlDock` is opt-in only. PR #17 run `38005546497` enforced `layout.mode=single-window`, `dock.showing=false`, corrected sRGB Offworld tokens, and captured screenshot SHA-256 `c9d69af12a68cc3efb42b9bf45acc6af5a4f097b6f6f93d4bdef1874a1b6905c`; [checkpoint](docs/verification/ui-single-window-math-by-design-2026-10-09.md) |
 | Local projects + immutable imports | Implemented | `ProjectStore`, SQLite schema; source and reference imports are immutable project assets |
 | Prompt trees/provenance/search/revisions | Implemented | `PromptLibrary`, `PromptExchange`; core smoke PASS |
 | Smart keywords | Implemented deterministic layer | explicit/imported tags are preserved; regex/frequency tags are separate |
