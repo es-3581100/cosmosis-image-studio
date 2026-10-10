@@ -297,6 +297,28 @@ fun launchFriendlyWorkspace(
             state.update { it.copy(model = next.id, message = "Model / " + next.id) }
         }
 
+        fun modeSupported(snapshot:UiSnapshot,mode:WorkflowMode):Boolean {
+            val caps=runCatching { controller.capabilitiesFor(snapshot.provider.lowercase(),snapshot.model) }.getOrNull()
+                ?: return false
+            return when(mode){
+                WorkflowMode.QUICK_GENERATE -> caps.textToImage
+                WorkflowMode.EDIT_EXISTING -> caps.imageToImage
+                WorkflowMode.MASK_EDIT -> caps.maskEditing
+                else -> true
+            }
+        }
+
+        fun unsupportedReason(snapshot:UiSnapshot,mode:WorkflowMode):String = when {
+            snapshot.provider.equals("CUSTOM",true) &&
+                snapshot.model=="inclusionai/ming-image-0.1-design" &&
+                mode==WorkflowMode.EDIT_EXISTING ->
+                "This Ming model is Generate-only. For free Ming editing use inclusionai/ming-image-0.1-design-layer."
+            mode==WorkflowMode.EDIT_EXISTING -> "Selected model does not support image editing."
+            mode==WorkflowMode.MASK_EDIT -> "Selected model does not support mask editing."
+            mode==WorkflowMode.QUICK_GENERATE -> "Selected model does not support prompt-only generation."
+            else -> "Selected model does not support this workflow."
+        }
+
         fun runCurrent() {
             val snapshot = state.get()
             if(snapshot.workflowMode in setOf(WorkflowMode.QUICK_GENERATE,WorkflowMode.EDIT_EXISTING,WorkflowMode.MASK_EDIT) &&
@@ -346,28 +368,6 @@ fun launchFriendlyWorkspace(
                 versions.size > 1 -> versions[versions.lastIndex - 1].id
                 else -> null
             }
-        }
-
-        fun modeSupported(snapshot:UiSnapshot,mode:WorkflowMode):Boolean {
-            val caps=runCatching { controller.capabilitiesFor(snapshot.provider.lowercase(),snapshot.model) }.getOrNull()
-                ?: return false
-            return when(mode){
-                WorkflowMode.QUICK_GENERATE -> caps.textToImage
-                WorkflowMode.EDIT_EXISTING -> caps.imageToImage
-                WorkflowMode.MASK_EDIT -> caps.maskEditing
-                else -> true
-            }
-        }
-
-        fun unsupportedReason(snapshot:UiSnapshot,mode:WorkflowMode):String = when {
-            snapshot.provider.equals("CUSTOM",true) &&
-                snapshot.model=="inclusionai/ming-image-0.1-design" &&
-                mode==WorkflowMode.EDIT_EXISTING ->
-                "This Ming model is Generate-only. For free Ming editing use inclusionai/ming-image-0.1-design-layer."
-            mode==WorkflowMode.EDIT_EXISTING -> "Selected model does not support image editing."
-            mode==WorkflowMode.MASK_EDIT -> "Selected model does not support mask editing."
-            mode==WorkflowMode.QUICK_GENERATE -> "Selected model does not support prompt-only generation."
-            else -> "Selected model does not support this workflow."
         }
 
         fun setMode(mode: WorkflowMode) {
