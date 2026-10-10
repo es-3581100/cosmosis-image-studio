@@ -240,6 +240,101 @@ class CoreBehaviorTest {
         assertEquals(listOf("x"),JsonUtil.allStringFields(json,"other"))
     }
 
+    @Test fun mingOpenRouterCapabilitiesSeparateGenerateFromEdit(){
+        val generate=OpenRouterImageProvider.declaredCapabilities("inclusionai/ming-image-0.1-design")
+        assertTrue(generate.textToImage)
+        assertFalse(generate.imageToImage)
+        assertEquals(0,generate.maxReferenceImages)
+        assertEquals(setOf("png","jpeg","webp"),generate.outputFormats)
+
+        val edit=OpenRouterImageProvider.declaredCapabilities("inclusionai/ming-image-0.1-design-layer")
+        assertFalse(edit.textToImage)
+        assertTrue(edit.imageToImage)
+        assertFalse(edit.maskEditing)
+        assertEquals(1,edit.maxReferenceImages)
+        assertEquals(setOf("png","webp"),edit.outputFormats)
+    }
+
+    @Test fun mingDesignLayerSendsExactlyOneInputReference(){
+        val requestedBody=AtomicReference<String>("")
+        val server=HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(),0),0)
+        val output=BufferedImage(8,8,BufferedImage.TYPE_INT_RGB)
+        val outputBytes=ByteArrayOutputStream().use{out->ImageIO.write(output,"png",out);out.toByteArray()}
+        val outputB64=Base64.getEncoder().encodeToString(outputBytes)
+        fun send(exchange:com.sun.net.httpserver.HttpExchange,status:Int,body:String){
+            val bytes=body.toByteArray()
+            exchange.sendResponseHeaders(status,bytes.size.toLong())
+            exchange.responseBody.use{it.write(bytes)}
+        }
+        server.createContext("/api/v1/images"){exchange->
+            requestedBody.set(exchange.requestBody.readAllBytes().decodeToString())
+            send(exchange,200,"""{"data":[{"b64_json":"$outputB64","media_type":"image/png"}]}""")
+        }
+        server.start()
+        val inputFile=Files.createTempFile("ming-edit-source",".png")
+        try{
+            ImageIO.write(BufferedImage(6,6,BufferedImage.TYPE_INT_RGB),"png",inputFile.toFile())
+            val base="http://127.0.0.1:"+server.address.port+"/api/v1"
+            val provider=OpenRouterImageProvider(
+                apiKey={"test"},
+                baseUrl=base,
+                modelId="inclusionai/ming-image-0.1-design-layer"
+            )
+            val result=provider.edit(
+                GenerationRequest(
+                    prompt="make the planet in the background red",
+                    model="inclusionai/ming-image-0.1-design-layer",
+                    references=listOf(ReferenceImage(inputFile,"image/png")),
+                    outputFormat="png"
+                )
+            )
+            assertEquals("image/png",result.images.single().mime)
+            val body=requestedBody.get()
+            assertContains(body,"\"input_references\"")
+            assertContains(body,"\"type\":\"image_url\"")
+            assertContains(body,"data:image/png;base64,")
+            assertEquals(1,Regex("data:image/png;base64,").findAll(body).count())
+        }finally{
+            server.stop(0)
+            Files.deleteIfExists(inputFile)
+        }
+    }
+
+    @Test fun mingDesignCannotEditAndDesignLayerCannotPromptGenerate(){
+        val design=OpenRouterImageProvider(
+            apiKey={"test"},
+            baseUrl="http://127.0.0.1:1/api/v1",
+            modelId="inclusionai/ming-image-0.1-design"
+        )
+        val source=Files.createTempFile("ming-capability-source",".png")
+        try{
+            ImageIO.write(BufferedImage(4,4,BufferedImage.TYPE_INT_RGB),"png",source.toFile())
+            assertFailsWith<CapabilityMismatchException>{
+                design.edit(
+                    GenerationRequest(
+                        prompt="edit",
+                        model="inclusionai/ming-image-0.1-design",
+                        references=listOf(ReferenceImage(source,"image/png"))
+                    )
+                )
+            }
+
+            val layer=OpenRouterImageProvider(
+                apiKey={"test"},
+                baseUrl="http://127.0.0.1:1/api/v1",
+                modelId="inclusionai/ming-image-0.1-design-layer"
+            )
+            assertFailsWith<CapabilityMismatchException>{
+                layer.generate(
+                    GenerationRequest(
+                        prompt="generate",
+                        model="inclusionai/ming-image-0.1-design-layer"
+                    )
+                )
+            }
+        }finally{Files.deleteIfExists(source)}
+    }
+
     @Test fun openRouterAdapterUsesUnifiedImagesEndpointAndChecksImageCatalog(){
         val requested=AtomicReference<String>("")
         val server=HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(),0),0)
