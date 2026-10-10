@@ -131,6 +131,8 @@ class CoreBehaviorTest {
             override fun models()=listOf(def)
             override fun generate(request:GenerationRequest):GenerationResult=
                 GenerationResult(request.id,id,request.model,listOf(GeneratedImage(byteArrayOf(1,2,3),"image/png")),5)
+            override fun edit(request:GenerationRequest):GenerationResult=generate(request)
+            override fun testConnection()=ConnectionStatus(true,"ok",1)
         }
         val registry=ProviderRegistry().register(provider)
         val seen=java.util.concurrent.CopyOnWriteArrayList<JobState>()
