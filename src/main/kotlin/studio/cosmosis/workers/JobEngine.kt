@@ -82,7 +82,6 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
         j.state=JobState.RUNNING;j.updatedAt=nowIso();store.saveJob(j);onJobUpdate(j.copy())
         val result=runCatching {
             withTimeout(q.budget.timeoutSeconds*1000){
-                var last:Throwable?=null
                 repeat(q.budget.maxRetries+1){attempt->
                     if(j.state==JobState.CANCELLED)throw CancellationException("cancelled")
                     try {
@@ -91,20 +90,22 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
                         return@withTimeout providerResult
                     } catch(t:Throwable){
                         if(t is CancellationException)throw t
-                        last=t
+                        val retryable=(t as? ProviderHttpException)?.retryable ?: true
+                        if(!retryable || attempt>=q.budget.maxRetries)throw t
                         j.retryCount=attempt+1
+                        j.error=ProviderFailureText.describe(t)
                         j.updatedAt=nowIso()
                         store.saveJob(j);onJobUpdate(j.copy())
                     }
                 }
-                throw last?:IllegalStateException("job failed")
+                error("unreachable retry loop")
             }
         }
         result.onSuccess{j.state=JobState.COMPLETE;j.error=null}.onFailure{
             j.state=if(it is CancellationException && it !is TimeoutCancellationException)JobState.CANCELLED else JobState.FAILED
             j.error=if(it is TimeoutCancellationException)
                 "Provider request timed out after "+q.budget.timeoutSeconds+"s"
-            else it.message
+            else ProviderFailureText.describe(it)
         }
         j.updatedAt=nowIso();store.saveJob(j);onJobUpdate(j.copy())
         q.callback(result)
