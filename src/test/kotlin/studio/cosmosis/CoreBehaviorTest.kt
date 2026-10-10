@@ -116,6 +116,56 @@ class CoreBehaviorTest {
         assertNull(preferredModelId(emptyList(),null))
     }
 
+    @Test fun customOpenAiCompatibleRouteUsesExplicitManualModelId(){
+        val provider=OpenAiCompatibleProvider(
+            providerId="custom",
+            apiKey={"unused"},
+            baseUrl="http://127.0.0.1:1/v1",
+            modelId="free-provider/free-image-model"
+        )
+        assertEquals("free-provider/free-image-model",provider.models().single().id)
+        assertTrue(provider.capabilities("free-provider/free-image-model").textToImage)
+        assertFailsWith<CapabilityMismatchException>{provider.capabilities("route-configured")}
+    }
+
+    @Test fun customRouteRegistrationDoesNotHijackCurrentProvider(){
+        val state=studio.cosmosis.ui.StudioState()
+        val controller=studio.cosmosis.ui.StudioController(state,Files.createTempDirectory("cosmosis-docs"))
+        try{
+            val before=state.get()
+            val secret="custom-secret".toCharArray()
+            try{
+                controller.configureCustomProvider(
+                    baseUrl="http://127.0.0.1:1/v1",
+                    modelId="free/model",
+                    secret=secret,
+                    keyEnv="CUSTOM_TEST_KEY"
+                )
+            }finally{secret.fill('\u0000')}
+            assertEquals(before.provider,state.get().provider)
+            assertEquals(before.model,state.get().model)
+            assertEquals("free/model",controller.modelsFor("custom").single().id)
+            assertEquals("session",controller.customCredentialSource())
+            assertFalse(state.get().message.contains("custom-secret"))
+        }finally{controller.close()}
+    }
+
+    @Test fun geminiSessionCredentialIsMemoryOnlyAndCurrentModelsAreRegistered(){
+        val state=studio.cosmosis.ui.StudioState()
+        val controller=studio.cosmosis.ui.StudioController(state,Files.createTempDirectory("cosmosis-docs"))
+        try{
+            val secret="gemini-test-secret".toCharArray()
+            try{controller.configureGeminiSessionKey(secret)}finally{secret.fill('\u0000')}
+            assertEquals("session",controller.geminiCredentialSource())
+            val ids=controller.modelsFor("gemini").map{it.id}.toSet()
+            assertTrue("gemini-nano-banana-2.1" in ids)
+            assertTrue("gemini-3.1-flash-image" in ids)
+            assertTrue("gemini-3.1-flash-lite-image" in ids)
+            assertTrue("gemini-3-pro-image" in ids)
+            assertFalse(state.get().message.contains("gemini-test-secret"))
+        }finally{controller.close()}
+    }
+
     @Test fun exactModelResolutionRejectsUndeclaredAliases(){
         val provider=GeminiProvider(apiKey={"unused"})
         assertFailsWith<CapabilityMismatchException>{provider.capabilities("gemini-3.1-flash-image-alias")}
