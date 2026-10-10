@@ -122,6 +122,36 @@ class CoreBehaviorTest {
         assertNull(preferredModelId(emptyList(),null))
     }
 
+    @Test fun workerLifecyclePublishesQueuedRunningAndTerminalStates(){
+        val root=Files.createTempDirectory("cosmosis-job-events")
+        val store=SqliteStore(root.resolve("jobs.db")).also{it.migrate()}
+        val provider=object:ImageProvider{
+            override val id="lifecycle"
+            private val def=ModelDefinition("lifecycle","ok","Lifecycle",ProviderCapabilities(textToImage=true))
+            override fun models()=listOf(def)
+            override fun generate(request:GenerationRequest):GenerationResult=
+                GenerationResult(request.id,id,request.model,listOf(GeneratedImage(byteArrayOf(1,2,3),"image/png")),5)
+        }
+        val registry=ProviderRegistry().register(provider)
+        val seen=java.util.concurrent.CopyOnWriteArrayList<JobState>()
+        val done=java.util.concurrent.CountDownLatch(1)
+        val engine=JobEngine(registry,store,1){seen+=it.state}
+        try{
+            engine.submit(
+                "lifecycle",
+                GenerationRequest(prompt="x",model="ok"),
+                false,
+                JobBudget(maxGenerations=1,maxRetries=0,timeoutSeconds=5)
+            ){done.countDown()}
+            assertTrue(done.await(5,java.util.concurrent.TimeUnit.SECONDS))
+            assertTrue(JobState.QUEUED in seen)
+            assertTrue(JobState.RUNNING in seen)
+            assertTrue(JobState.COMPLETE in seen)
+        }finally{
+            engine.close();store.close()
+        }
+    }
+
     @Test fun activeCustomRouteRebindsWhenManualModelChanges(){
         val state=studio.cosmosis.ui.StudioState()
         val controller=studio.cosmosis.ui.StudioController(state,Files.createTempDirectory("cosmosis-docs"))
@@ -160,6 +190,8 @@ class CoreBehaviorTest {
         server.createContext("/api/v1/images"){exchange->
             val body=exchange.requestBody.readAllBytes().decodeToString()
             assertContains(body,"\"model\":\"image/model\"")
+            assertFalse(body.contains("\"quality\":\"auto\""))
+            assertFalse(body.contains("\"n\":1"))
             send(exchange,200,"""{"data":[{"b64_json":"$b64","media_type":"image/png"}]}""")
         }
         server.start()
