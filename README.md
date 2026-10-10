@@ -90,7 +90,11 @@ Custom OpenAI-compatible gateways have a separate configuration block with:
 - an optional session-only bearer key;
 - an optional fallback environment-variable name.
 
-**Register / Update** changes only the custom route definition. It does not switch the active provider or disturb the OpenAI/Gemini adapters. **Use Custom** explicitly selects the route afterward. The manual model ID becomes the exact declared model for that custom route; arbitrary model strings do not gain OpenAI- or Gemini-specific semantic capabilities.
+**Register / Update** changes only the custom route definition. It does not switch the active provider or disturb the OpenAI/Gemini adapters. **Use Custom** explicitly selects the route afterward. If Custom is already active and the registered model changes, the active state is rebound to that exact new model so a stale editable model cannot survive registration. Typing a new model in the Custom model selector likewise re-declares that exact model before dispatch.
+
+For an `openrouter.ai` base URL, COSMOSIS automatically uses OpenRouter's unified Image API profile: `POST /api/v1/images` for generation and `GET /api/v1/images/models` for the authoritative image-capable catalog. **Test Selected Provider** fails clearly when the manually entered OpenRouter slug is text/vision-only. This is intentionally distinct from the generic OpenAI Images route (`/images/generations`).
+
+The manual model ID becomes the exact declared model for that custom route; arbitrary model strings do not gain OpenAI- or Gemini-specific semantic capabilities.
 
 Gemini's built-in image registry tracks current Nano Banana image routes including `gemini-nano-banana-2.1`, `gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`, and `gemini-3-pro-image`. Provider pricing/quota availability is external and can change; COSMOSIS intentionally does not label a model as free merely because it can be used in Google AI Studio.
 
