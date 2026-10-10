@@ -48,6 +48,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     private var geminiSessionKey:CharArray?=null
     private var customSessionKey:CharArray?=null
     private var customKeyEnvName:String="CUSTOM_OPENAI_API_KEY"
+    private var customBaseUrl:String?=null
     private var customModelId:String?=null
 
     val providers=ProviderRegistry.default()
@@ -225,17 +226,47 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
             }
         }
         customKeyEnvName=envName
+        customBaseUrl=route
         customModelId=model
-        providers.register(OpenAiCompatibleProvider(
-            providerId="custom",
-            apiKey={
-                customSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
-                    ?: System.getenv(customKeyEnvName)
-            },
-            baseUrl=route,
-            modelId=model
-        ))
-        state.update{it.copy(message="CUSTOM ROUTE REGISTERED / "+model)}
+        registerCustomRoute()
+        state.update{
+            if(it.provider.equals("custom",true)) it.copy(model=model,message="CUSTOM ROUTE UPDATED / "+model)
+            else it.copy(message="CUSTOM ROUTE REGISTERED / "+model)
+        }
+    }
+    private fun registerCustomRoute(){
+        val route=requireNotNull(customBaseUrl){"Custom base URL is not configured"}
+        val model=requireNotNull(customModelId){"Custom model ID is not configured"}
+        val keyProvider={
+            customSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
+                ?: System.getenv(customKeyEnvName)
+        }
+        val host=runCatching{java.net.URI.create(route).host.orEmpty().lowercase()}.getOrDefault("")
+        val provider:ImageProvider=if(host=="openrouter.ai" || host.endsWith(".openrouter.ai")){
+            OpenRouterImageProvider(apiKey=keyProvider,baseUrl=route,modelId=model)
+        }else{
+            OpenAiCompatibleProvider(providerId="custom",apiKey=keyProvider,baseUrl=route,modelId=model)
+        }
+        providers.register(provider)
+    }
+    fun selectCustomModel(modelId:String){
+        val model=modelId.trim()
+        require(model.isNotBlank()){"Custom model ID is required"}
+        require(customBaseUrl!=null){"Register the custom route first"}
+        if(customModelId!=model){
+            customModelId=model
+            registerCustomRoute()
+        }
+        state.update{it.copy(provider="CUSTOM",model=model,message="ROUTE / CUSTOM / "+model)}
+    }
+    fun activateCustomProvider(){
+        val model=requireNotNull(customModelId){"Register the custom route and model ID first"}
+        selectCustomModel(model)
+    }
+    fun customRouteKind():String{
+        val route=customBaseUrl?:return "unconfigured"
+        val host=runCatching{java.net.URI.create(route).host.orEmpty().lowercase()}.getOrDefault("")
+        return if(host=="openrouter.ai" || host.endsWith(".openrouter.ai"))"openrouter-image" else "openai-images"
     }
     fun customModelId():String?=customModelId
     fun clearCustomSessionKey(){

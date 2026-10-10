@@ -168,8 +168,14 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         model.addActionListener{
             refreshCapabilities()
             if(!syncingProviderModel){
-                val mid=model.selectedItem?.toString()?.trim().orEmpty()
-                if(mid.isNotBlank())state.update{it.copy(model=mid)}
+                val pid=provider.selectedItem?.toString().orEmpty()
+                val selected=model.selectedItem?.toString()?.trim().orEmpty()
+                val typed=model.editor.item?.toString()?.trim().orEmpty()
+                val mid=if(pid=="custom"&&typed.isNotBlank())typed else selected
+                if(mid.isNotBlank()){
+                    if(pid=="custom")runCatching{controller.selectCustomModel(mid)}.onFailure(::showError)
+                    else state.update{it.copy(model=mid)}
+                }
             }
         }
         workflowMode.addActionListener{(workflowMode.selectedItem as? WorkflowMode)?.let(controller::setWorkflowMode)}
@@ -305,6 +311,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         add(Box.createVerticalStrut(13));add(label("CUSTOM OPENAI-COMPATIBLE ROUTE"))
         add(label("BASE URL"));add(customUrl)
         add(label("MODEL ID / MANUAL"));add(customModel)
+        add(label("OpenRouter note: TEST SELECTED PROVIDER checks /images/models; :free text/vision models cannot render images."))
         add(label("API KEY / SESSION ONLY (OPTIONAL IF ENV IS SET)"));add(customKey)
         add(label("FALLBACK KEY ENV NAME"));add(customEnv)
         add(customKeyStatus)
@@ -315,16 +322,20 @@ class ControlDock(private val controller:StudioController,private val state:Stud
                 controller.configureCustomProvider(customUrl.text.trim(),customModel.text.trim(),chars,customEnv.text.trim())
                 customKey.text=""
                 refreshCustomKeyStatus()
-                status.text="CUSTOM ROUTE REGISTERED / "+customModel.text.trim()+" — current provider unchanged"
+                val kind=controller.customRouteKind()
+                status.text="CUSTOM ROUTE REGISTERED / "+customModel.text.trim()+" / "+kind+
+                    if(state.get().provider.equals("custom",true))" — active model updated" else " — current provider unchanged"
             }catch(t:Throwable){showError(t)}finally{chars.fill('\u0000')}
         }
         button(customActions,"USE CUSTOM"){
             runCatching{
-                val mid=controller.customModelId()?:error("Register the custom route and model ID first")
+                controller.activateCustomProvider()
                 provider.selectedItem="custom"
                 refreshModels()
+                val mid=controller.customModelId()?:error("Register the custom route and model ID first")
                 model.selectedItem=mid
-                state.update{it.copy(provider="CUSTOM",model=mid,message="ROUTE / CUSTOM / "+mid)}
+                model.editor.item=mid
+                refreshCapabilities()
             }.onFailure(::showError)
         }
         button(customActions,"CLEAR CUSTOM SESSION KEY"){controller.clearCustomSessionKey();customKey.text="";refreshCustomKeyStatus()}
@@ -335,7 +346,10 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         button(this,"TEST SELECTED PROVIDER"){
             val id=provider.selectedItem.toString()
             runCatching{controller.testProvider(id)}
-                .onSuccess{r->status.text=(if(r.ok)"● READY" else "× FAILED")+" "+id+" / "+r.message+" / "+r.latencyMs+"ms"}
+                .onSuccess{r->
+                    val route=if(id=="custom")" / "+controller.customRouteKind() else ""
+                    status.text=(if(r.ok)"● READY" else "× FAILED")+" "+id+route+" / "+r.message+" / "+r.latencyMs+"ms"
+                }
                 .onFailure(::showError)
         }
 
@@ -469,7 +483,10 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         val selected=preferredModelId(defs,current)
         model.removeAllItems()
         defs.forEach{model.addItem(it.id)}
-        if(selected!=null)model.selectedItem=selected else model.editor.item=null
+        if(selected!=null){
+            model.selectedItem=selected
+            model.editor.item=selected
+        }else model.editor.item=null
         refreshCapabilities()
     }
     private fun syncProviderModelFromState(snapshot:UiSnapshot){
@@ -480,7 +497,10 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             if(provider.selectedItem?.toString()!=pid)provider.selectedItem=pid
             refreshModels()
             val defs=runCatching{controller.modelsFor(pid)}.getOrDefault(emptyList())
-            preferredModelId(defs,snapshot.model)?.let{model.selectedItem=it}
+            preferredModelId(defs,snapshot.model)?.let{
+                model.selectedItem=it
+                model.editor.item=it
+            }
         }finally{syncingProviderModel=false}
     }
     private fun refreshOpenAiKeyStatus(){
@@ -531,7 +551,17 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         if(mode==WorkflowMode.UPSCALE){upscaleDialog();return}
         if(mode==WorkflowMode.AGENT_BUILD){runAgentBuildDialog();return}
         val body=prompt.text.trim();if(body.isBlank())return showError(IllegalArgumentException("Prompt is empty"))
-        val modelId=model.editor.item?.toString()?.trim().orEmpty();if(modelId.isBlank())return showError(IllegalArgumentException("Select a model"))
+        val providerId=provider.selectedItem?.toString().orEmpty()
+        val selectedModel=model.selectedItem?.toString()?.trim().orEmpty()
+        val typedModel=model.editor.item?.toString()?.trim().orEmpty()
+        val modelId=if(providerId=="custom")typedModel.ifBlank{selectedModel} else selectedModel.ifBlank{typedModel}
+        if(modelId.isBlank())return showError(IllegalArgumentException("Select a model"))
+        if(providerId=="custom"){
+            val admitted=runCatching{controller.selectCustomModel(modelId)}
+            if(admitted.isFailure)return showError(admitted.exceptionOrNull()!!)
+            model.selectedItem=modelId
+            model.editor.item=modelId
+        }
         val q=quality.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}
         val meta=linkedMapOf<String,String>()
         imageSize.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}?.let{meta["imageSize"]=it}
@@ -547,7 +577,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         )
         runCatching{
             controller.generate(
-                body,provider.selectedItem.toString(),modelId,
+                body,providerId,modelId,
                 variants=(variants.value as Number).toInt(),edit=editing,transparent=transparentOutput.isSelected,
                 quality=q,promptId=selectedPromptId,aspectRatio=aspectRatio.text.trim().takeIf{it.isNotBlank()},
                 metadata=meta,width=w,height=h,outputFormat=outputFormat.selectedItem?.toString()?:"png",workflowMode=mode
