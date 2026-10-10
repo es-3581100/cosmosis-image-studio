@@ -1,5 +1,6 @@
 package studio.cosmosis.provider
 
+import java.nio.file.Files
 import java.util.Base64
 
 /**
@@ -19,30 +20,8 @@ class OpenRouterImageProvider(
         provider=id,
         id=modelId,
         label=modelId,
-        capabilities=ProviderCapabilities(
-            textToImage=true,
-            imageToImage=false,
-            maskEditing=false,
-            multipleReferences=false,
-            multiTurnEditing=false,
-            transparentBackground=false,
-            customDimensions=false,
-            aspectRatios=emptySet(),
-            imageSizes=emptySet(),
-            searchGrounding=false,
-            thinkingConfiguration=false,
-            responsesImageGeneration=false,
-            outputCompression=false,
-            interactionStorage=false,
-            continuationProtocol=ContinuationProtocol.NONE,
-            streamingPreview=false,
-            parallelVariants=false,
-            maxReferenceImages=0,
-            qualityLevels=setOf("auto","low","medium","high"),
-            outputFormats=setOf("png","jpeg","webp"),
-            promptRevision=false
-        ),
-        notes="OpenRouter unified Image API route. Exact image capability is verified against /images/models by TEST SELECTED PROVIDER."
+        capabilities=declaredCapabilities(modelId),
+        notes=declaredNotes(modelId)
     )
 
     override fun models()=listOf(definition)
@@ -55,6 +34,17 @@ class OpenRouterImageProvider(
     override fun generate(request:GenerationRequest):GenerationResult {
         val declared=modelDefinition(request.model)
         CapabilityValidator.validate(request,declared,false)
+        return execute(request,includeReferences=false)
+    }
+
+    override fun edit(request:GenerationRequest):GenerationResult {
+        val declared=modelDefinition(request.model)
+        CapabilityValidator.validate(request,declared,true)
+        require(request.references.isNotEmpty()){"OpenRouter image editing requires at least one reference image"}
+        return execute(request,includeReferences=true)
+    }
+
+    private fun execute(request:GenerationRequest,includeReferences:Boolean):GenerationResult {
         val start=System.nanoTime()
         val fields=mutableListOf<Pair<String,String?>>(
             "model" to JsonUtil.quote(request.model),
@@ -63,7 +53,8 @@ class OpenRouterImageProvider(
             "quality" to request.quality?.takeIf{it.isNotBlank()&&!it.equals("auto",true)}?.let(JsonUtil::quote),
             "output_format" to JsonUtil.quote(request.outputFormat),
             "aspect_ratio" to request.aspectRatio?.let(JsonUtil::quote),
-            "resolution" to request.metadata["imageSize"]?.let(JsonUtil::quote)
+            "resolution" to request.metadata["imageSize"]?.let(JsonUtil::quote),
+            "input_references" to request.references.takeIf{includeReferences && it.isNotEmpty()}?.let(::referenceArray)
         )
         val body=fields.filter{it.second!=null}.joinToString(prefix="{",postfix="}") {
             JsonUtil.quote(it.first)+":"+it.second
@@ -87,15 +78,15 @@ class OpenRouterImageProvider(
         )
     }
 
-    override fun edit(request:GenerationRequest):GenerationResult {
-        throw CapabilityMismatchException(
-            provider=id,
-            model=request.model,
-            capability="imageToImage",
-            option="editing",
-            declared="OpenRouter reference/edit capability must be discovered from /images/models before admission"
-        )
-    }
+    private fun referenceArray(refs:List<ReferenceImage>):String =
+        JsonUtil.arr(refs.map { ref ->
+            val bytes=Files.readAllBytes(ref.path)
+            val dataUrl="data:"+ref.mime+";base64,"+Base64.getEncoder().encodeToString(bytes)
+            JsonUtil.obj(
+                "type" to JsonUtil.quote("image_url"),
+                "image_url" to JsonUtil.obj("url" to JsonUtil.quote(dataUrl))
+            )
+        })
 
     override fun testConnection():ConnectionStatus {
         val start=System.nanoTime()
@@ -106,7 +97,13 @@ class OpenRouterImageProvider(
             } else {
                 val imageModelIds=JsonUtil.allStringFields(json,"id").toSet()
                 if(modelId in imageModelIds) {
-                    ConnectionStatus(true,"OpenRouter Image API ready / model is image-capable",(System.nanoTime()-start)/1_000_000)
+                    val caps=definition.capabilities
+                    val mode=when{
+                        caps.imageToImage && caps.textToImage -> "generate + edit"
+                        caps.imageToImage -> "edit"
+                        else -> "generate"
+                    }
+                    ConnectionStatus(true,"OpenRouter Image API ready / $mode / model is image-capable",(System.nanoTime()-start)/1_000_000)
                 } else {
                     ConnectionStatus(
                         false,
@@ -117,6 +114,64 @@ class OpenRouterImageProvider(
             }
         } catch(e:Exception) {
             ConnectionStatus(false,e.message?:e.javaClass.simpleName,(System.nanoTime()-start)/1_000_000)
+        }
+    }
+
+    companion object {
+        fun declaredCapabilities(modelId:String):ProviderCapabilities = when(modelId) {
+            "inclusionai/ming-image-0.1-design" -> ProviderCapabilities(
+                textToImage=true,
+                imageToImage=false,
+                maskEditing=false,
+                multipleReferences=false,
+                maxReferenceImages=0,
+                customDimensions=false,
+                parallelVariants=false,
+                qualityLevels=emptySet(),
+                outputFormats=setOf("png","jpeg","webp")
+            )
+            "inclusionai/ming-image-0.1-design-layer" -> ProviderCapabilities(
+                textToImage=false,
+                imageToImage=true,
+                maskEditing=false,
+                multipleReferences=false,
+                maxReferenceImages=1,
+                customDimensions=false,
+                parallelVariants=false,
+                qualityLevels=emptySet(),
+                outputFormats=setOf("png","webp")
+            )
+            else -> ProviderCapabilities(
+                textToImage=true,
+                imageToImage=false,
+                maskEditing=false,
+                multipleReferences=false,
+                maxReferenceImages=0,
+                transparentBackground=false,
+                customDimensions=false,
+                aspectRatios=emptySet(),
+                imageSizes=emptySet(),
+                searchGrounding=false,
+                thinkingConfiguration=false,
+                responsesImageGeneration=false,
+                outputCompression=false,
+                interactionStorage=false,
+                continuationProtocol=ContinuationProtocol.NONE,
+                streamingPreview=false,
+                parallelVariants=false,
+                qualityLevels=setOf("auto","low","medium","high"),
+                outputFormats=setOf("png","jpeg","webp"),
+                promptRevision=false
+            )
+        }
+
+        private fun declaredNotes(modelId:String):String = when(modelId) {
+            "inclusionai/ming-image-0.1-design" ->
+                "OpenRouter Ming Design: prompt-only text-to-image; reference editing is not supported."
+            "inclusionai/ming-image-0.1-design-layer" ->
+                "OpenRouter Ming Design Layer: image-to-image only; requires exactly one reference image; PNG/WebP output."
+            else ->
+                "OpenRouter unified Image API route. Unknown custom models default to conservative generation-only capabilities until explicitly declared."
         }
     }
 }

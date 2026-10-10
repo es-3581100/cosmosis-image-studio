@@ -297,8 +297,35 @@ fun launchFriendlyWorkspace(
             state.update { it.copy(model = next.id, message = "Model / " + next.id) }
         }
 
+        fun modeSupported(snapshot:UiSnapshot,mode:WorkflowMode):Boolean {
+            val caps=runCatching { controller.capabilitiesFor(snapshot.provider.lowercase(),snapshot.model) }.getOrNull()
+                ?: return false
+            return when(mode){
+                WorkflowMode.QUICK_GENERATE -> caps.textToImage
+                WorkflowMode.EDIT_EXISTING -> caps.imageToImage
+                WorkflowMode.MASK_EDIT -> caps.maskEditing
+                else -> true
+            }
+        }
+
+        fun unsupportedReason(snapshot:UiSnapshot,mode:WorkflowMode):String = when {
+            snapshot.provider.equals("CUSTOM",true) &&
+                snapshot.model=="inclusionai/ming-image-0.1-design" &&
+                mode==WorkflowMode.EDIT_EXISTING ->
+                "This Ming model is Generate-only. For free Ming editing use inclusionai/ming-image-0.1-design-layer."
+            mode==WorkflowMode.EDIT_EXISTING -> "Selected model does not support image editing."
+            mode==WorkflowMode.MASK_EDIT -> "Selected model does not support mask editing."
+            mode==WorkflowMode.QUICK_GENERATE -> "Selected model does not support prompt-only generation."
+            else -> "Selected model does not support this workflow."
+        }
+
         fun runCurrent() {
             val snapshot = state.get()
+            if(snapshot.workflowMode in setOf(WorkflowMode.QUICK_GENERATE,WorkflowMode.EDIT_EXISTING,WorkflowMode.MASK_EDIT) &&
+                !modeSupported(snapshot,snapshot.workflowMode)){
+                state.update{it.copy(message="UNAVAILABLE / "+unsupportedReason(snapshot,snapshot.workflowMode))}
+                return
+            }
             runCatching {
                 when (snapshot.workflowMode) {
                     WorkflowMode.IMAGE_TO_PROMPT -> controller.analyzeCurrent()
@@ -345,6 +372,11 @@ fun launchFriendlyWorkspace(
 
         fun setMode(mode: WorkflowMode) {
             promptFocused = false
+            val snapshot=state.get()
+            if(!modeSupported(snapshot,mode)){
+                state.update{it.copy(message="UNAVAILABLE / "+unsupportedReason(snapshot,mode))}
+                return
+            }
             controller.setWorkflowMode(mode)
         }
 
@@ -441,12 +473,18 @@ fun launchFriendlyWorkspace(
                 text: String,
                 active: Boolean = false,
                 primary: Boolean = false,
+                enabled: Boolean = true,
                 action: () -> Unit
             ) {
-                targets += FriendlyHit(rect, action)
-                drawer.stroke = if (active || primary) F_FG.opacify(.9) else F_FG.opacify(.18)
-                drawer.strokeWeight = if (active || primary) 1.2 else 1.0
+                if(enabled) targets += FriendlyHit(rect, action)
+                drawer.stroke = when {
+                    !enabled -> F_FG.opacify(.08)
+                    active || primary -> F_FG.opacify(.9)
+                    else -> F_FG.opacify(.18)
+                }
+                drawer.strokeWeight = if (enabled && (active || primary)) 1.2 else 1.0
                 drawer.fill = when {
+                    !enabled -> F_BG.opacify(.65)
                     primary -> F_FG
                     active -> F_FG.opacify(.09)
                     else -> F_SURFACE_2
@@ -456,8 +494,13 @@ fun launchFriendlyWorkspace(
                     text,
                     rect.x + 9.0,
                     rect.y + rect.height / 2.0 + 4.0,
-                    if (primary) F_BG else if (active) F_FG else F_MUTED,
-                    bold = primary || active
+                    when {
+                        !enabled -> F_SECOND.opacify(.55)
+                        primary -> F_BG
+                        active -> F_FG
+                        else -> F_MUTED
+                    },
+                    bold = enabled && (primary || active)
                 )
             }
 
@@ -511,13 +554,30 @@ fun launchFriendlyWorkspace(
                     "Mask" to WorkflowMode.MASK_EDIT
                 )
                 modes.forEachIndexed { index, pair ->
+                    val supported=modeSupported(snapshot,pair.second)
                     button(
                         UiRect(pad + index * (tabW + gap), cy, tabW, 36.0),
                         pair.first,
-                        active = snapshot.workflowMode == pair.second
+                        active = snapshot.workflowMode == pair.second,
+                        enabled = supported
                     ) { setMode(pair.second) }
                 }
-                cy += 50.0
+                cy += 43.0
+                val selectedModeSupported=modeSupported(snapshot,snapshot.workflowMode)
+                if(!selectedModeSupported){
+                    label(unsupportedReason(snapshot,snapshot.workflowMode).take(52),pad,cy,F_RED,tiny=true)
+                    cy += 17.0
+                }else{
+                    val capabilityHint=when{
+                        snapshot.provider.equals("CUSTOM",true) && snapshot.model=="inclusionai/ming-image-0.1-design" ->
+                            "Ming Design / Generate only"
+                        snapshot.provider.equals("CUSTOM",true) && snapshot.model=="inclusionai/ming-image-0.1-design-layer" ->
+                            "Ming Design Layer / Edit only / 1 image"
+                        else -> null
+                    }
+                    capabilityHint?.let{label(it,pad,cy,F_SECOND,tiny=true);cy+=17.0}
+                }
+                cy += 7.0
 
                 if (snapshot.workflowMode in setOf(WorkflowMode.EDIT_EXISTING, WorkflowMode.MASK_EDIT)) {
                     label("Editing", pad, cy, F_MUTED, tiny = true)
@@ -621,7 +681,8 @@ fun launchFriendlyWorkspace(
                     WorkflowMode.REFERENCE_REMIX -> "Create remix"
                     else -> "Generate image"
                 }
-                button(UiRect(pad, actionY, innerW, actionH), actionText, primary = true) {
+                val actionSupported=busy || modeSupported(snapshot,snapshot.workflowMode)
+                button(UiRect(pad, actionY, innerW, actionH), actionText, primary = true, enabled = actionSupported) {
                     if(busy) controller.cancelActiveJobs() else runCurrent()
                 }
                 label(if(busy)"Provider request in progress" else "Ctrl + Enter", composerWidth - if(busy)151.0 else 87.0, actionY - 8.0, F_SECOND, tiny = true)
@@ -814,7 +875,11 @@ fun launchFriendlyWorkspace(
                     drawer.rectangle(historyX, footerY, historyWidth, 76.0)
                     label(selected.name.take(28), historyX + 12.0, footerY + 20.0, F_FG, bold = true)
                     val bw = (historyWidth - 36.0) / 3.0
-                    button(UiRect(historyX + 12.0, footerY + 32.0, bw, 30.0), "Edit") { setMode(WorkflowMode.EDIT_EXISTING) }
+                    button(
+                        UiRect(historyX + 12.0, footerY + 32.0, bw, 30.0),
+                        "Edit",
+                        enabled = modeSupported(snapshot,WorkflowMode.EDIT_EXISTING)
+                    ) { setMode(WorkflowMode.EDIT_EXISTING) }
                     button(UiRect(historyX + 18.0 + bw, footerY + 32.0, bw, 30.0), "Compare") { controller.setCompareVersion(previousVersionId()) }
                     button(UiRect(historyX + 24.0 + bw * 2.0, footerY + 32.0, bw, 30.0), "Export") { exportCurrent() }
                 }
