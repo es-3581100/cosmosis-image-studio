@@ -8,7 +8,7 @@ import studio.cosmosis.storage.SqliteStore
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
-class JobEngine(private val providers:ProviderRegistry,private val store:SqliteStore,parallelism:Int=2):AutoCloseable {
+class JobEngine(private val providers:ProviderRegistry,private val store:SqliteStore,parallelism:Int=2,private val onJobUpdate:(WorkerJob)->Unit={}):AutoCloseable {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private val queue=Channel<Queued>(Channel.UNLIMITED)
     private val jobs=ConcurrentHashMap<String,WorkerJob>()
@@ -41,7 +41,7 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
             maxRetries=budget.maxRetries
         )
         jobs[job.id]=job
-        store.saveJob(job)
+        store.saveJob(job);onJobUpdate(job.copy())
         queue.trySend(Queued(job,providerId,request,editing,budget,callback)).getOrThrow()
         return job
     }
@@ -60,7 +60,7 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
         job.error=null
         job.retryCount=0
         job.updatedAt=nowIso()
-        store.saveJob(job)
+        store.saveJob(job);onJobUpdate(job.copy())
         queue.trySend(Queued(job,decoded.providerId,decoded.request,decoded.editing,decoded.budget,callback)).getOrThrow()
         return job
     }
@@ -73,13 +73,13 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
         return runCatching{decode(job)}.isSuccess
     }
 
-    fun cancel(id:String){jobs[id]?.let{it.state=JobState.CANCELLED;it.updatedAt=nowIso();store.saveJob(it)}}
+    fun cancel(id:String){jobs[id]?.let{it.state=JobState.CANCELLED;it.updatedAt=nowIso();store.saveJob(it);onJobUpdate(it.copy())}}
     fun snapshot():List<WorkerJob> = jobs.values.sortedBy{it.createdAt}
 
     private suspend fun runOne(q:Queued){
         val j=q.job
         if(j.state==JobState.CANCELLED)return
-        j.state=JobState.RUNNING;j.updatedAt=nowIso();store.saveJob(j)
+        j.state=JobState.RUNNING;j.updatedAt=nowIso();store.saveJob(j);onJobUpdate(j.copy())
         val result=runCatching {
             withTimeout(q.budget.timeoutSeconds*1000){
                 var last:Throwable?=null
@@ -94,7 +94,7 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
                         last=t
                         j.retryCount=attempt+1
                         j.updatedAt=nowIso()
-                        store.saveJob(j)
+                        store.saveJob(j);onJobUpdate(j.copy())
                     }
                 }
                 throw last?:IllegalStateException("job failed")
@@ -104,7 +104,7 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
             j.state=if(it is CancellationException)JobState.CANCELLED else JobState.FAILED
             j.error=it.message
         }
-        j.updatedAt=nowIso();store.saveJob(j)
+        j.updatedAt=nowIso();store.saveJob(j);onJobUpdate(j.copy())
         q.callback(result)
     }
 
