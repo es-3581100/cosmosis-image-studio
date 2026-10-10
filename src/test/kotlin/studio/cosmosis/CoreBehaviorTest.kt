@@ -15,6 +15,12 @@ import studio.cosmosis.ui.preferredModelId
 import java.nio.file.Files
 import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
+import com.sun.net.httpserver.HttpServer
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.io.ByteArrayOutputStream
+import java.util.Base64
+import java.util.concurrent.atomic.AtomicReference
 
 class CoreBehaviorTest {
     @Test fun promptCopyKeepsProvenanceAndCreatesRevision(){
@@ -114,6 +120,63 @@ class CoreBehaviorTest {
         assertEquals("image-a",preferredModelId(definitions,"local-preview-v1"))
         assertEquals("image-a",preferredModelId(definitions,null))
         assertNull(preferredModelId(emptyList(),null))
+    }
+
+    @Test fun activeCustomRouteRebindsWhenManualModelChanges(){
+        val state=studio.cosmosis.ui.StudioState()
+        val controller=studio.cosmosis.ui.StudioController(state,Files.createTempDirectory("cosmosis-docs"))
+        try{
+            controller.configureCustomProvider("https://openrouter.ai/api/v1","model/first")
+            controller.activateCustomProvider()
+            assertEquals("CUSTOM",state.get().provider)
+            assertEquals("model/first",state.get().model)
+
+            controller.configureCustomProvider("https://openrouter.ai/api/v1","model/second")
+            assertEquals("model/second",state.get().model)
+            assertEquals("model/second",controller.modelsFor("custom").single().id)
+            assertEquals("openrouter-image",controller.customRouteKind())
+
+            controller.selectCustomModel("model/third")
+            assertEquals("model/third",state.get().model)
+            assertEquals("model/third",controller.modelsFor("custom").single().id)
+        }finally{controller.close()}
+    }
+
+    @Test fun openRouterAdapterUsesUnifiedImagesEndpointAndChecksImageCatalog(){
+        val requested=AtomicReference<String>("")
+        val server=HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(),0),0)
+        val image=BufferedImage(8,8,BufferedImage.TYPE_INT_RGB)
+        val png=ByteArrayOutputStream().use{out->ImageIO.write(image,"png",out);out.toByteArray()}
+        val b64=Base64.getEncoder().encodeToString(png)
+        fun send(exchange:com.sun.net.httpserver.HttpExchange,status:Int,body:String){
+            requested.set(exchange.requestURI.path)
+            val bytes=body.toByteArray()
+            exchange.sendResponseHeaders(status,bytes.size.toLong())
+            exchange.responseBody.use{it.write(bytes)}
+        }
+        server.createContext("/api/v1/images/models"){exchange->
+            send(exchange,200,"""{"data":[{"id":"image/model"}]}""")
+        }
+        server.createContext("/api/v1/images"){exchange->
+            val body=exchange.requestBody.readAllBytes().decodeToString()
+            assertContains(body,"\"model\":\"image/model\"")
+            send(exchange,200,"""{"data":[{"b64_json":"$b64","media_type":"image/png"}]}""")
+        }
+        server.start()
+        try{
+            val base="http://127.0.0.1:"+server.address.port+"/api/v1"
+            val provider=OpenRouterImageProvider(apiKey={"test"},baseUrl=base,modelId="image/model")
+            assertTrue(provider.testConnection().ok)
+            assertEquals("/api/v1/images/models",requested.get())
+            val result=provider.generate(GenerationRequest(prompt="x",model="image/model"))
+            assertEquals("/api/v1/images",requested.get())
+            assertEquals("image/png",result.images.single().mime)
+
+            val wrong=OpenRouterImageProvider(apiKey={"test"},baseUrl=base,modelId="text/vision-only")
+            val status=wrong.testConnection()
+            assertFalse(status.ok)
+            assertContains(status.message,"not in OpenRouter /images/models")
+        }finally{server.stop(0)}
     }
 
     @Test fun customOpenAiCompatibleRouteUsesExplicitManualModelId(){
