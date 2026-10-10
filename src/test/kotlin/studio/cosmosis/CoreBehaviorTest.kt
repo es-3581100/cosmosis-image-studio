@@ -223,6 +223,23 @@ class CoreBehaviorTest {
         }finally{controller.close()}
     }
 
+    @Test fun largeBase64JsonFieldParsesWithoutRegexStackOverflow(){
+        val bytes=ByteArray(3*1024*1024){index->(index%251).toByte()}
+        val b64=Base64.getEncoder().encodeToString(bytes)
+        val json="{\"data\":[{\"b64_json\":\""+b64+"\",\"media_type\":\"image/png\"}],\"usage\":{\"cost\":0.0}}"
+        val extracted=JsonUtil.allStringFields(json,"b64_json")
+        assertEquals(1,extracted.size)
+        assertEquals(b64.length,extracted.single().length)
+        assertContentEquals(bytes,Base64.getDecoder().decode(extracted.single()))
+        assertEquals("image/png",JsonUtil.stringField(json,"media_type"))
+    }
+
+    @Test fun jsonStringScannerPreservesEscapes(){
+        val json="{\"message\":\"line1\\nline2 \\\"quoted\\\" \\\\ slash\",\"other\":\"x\"}"
+        assertEquals("line1\nline2 \"quoted\" \\ slash",JsonUtil.stringField(json,"message"))
+        assertEquals(listOf("x"),JsonUtil.allStringFields(json,"other"))
+    }
+
     @Test fun openRouterAdapterUsesUnifiedImagesEndpointAndChecksImageCatalog(){
         val requested=AtomicReference<String>("")
         val server=HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(),0),0)
