@@ -44,8 +44,12 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     private val directives=mutableListOf<AgentDirective>()
     private val activeReferenceIds=linkedSetOf<String>()
     private var currentMaskId:String?=null
+    private var openAiSessionKey:CharArray?=null
 
-    val providers=ProviderRegistry.default()
+    val providers=ProviderRegistry.default().register(OpenAiProvider(apiKey={
+        openAiSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
+            ?: System.getenv("OPENAI_API_KEY")
+    }))
     val agentIndex=AgentIndex(docsRoot)
     val orml=OrmlExecutor.discovered()
 
@@ -196,6 +200,23 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         require(baseUrl.startsWith("http")){"Custom base URL must use http/https"}
         providers.register(OpenAiCompatibleProvider("custom",{System.getenv(keyEnv)},baseUrl))
         state.update{it.copy(message="CUSTOM PROVIDER REGISTERED / secret env $keyEnv")}
+    }
+    fun configureOpenAiSessionKey(secret:CharArray){
+        val value=secret.concatToString().trim()
+        require(value.isNotBlank()){"OpenAI API key is empty"}
+        openAiSessionKey?.fill('\u0000')
+        openAiSessionKey=value.toCharArray()
+        state.update{it.copy(message="OPENAI / SESSION KEY READY")}
+    }
+    fun clearOpenAiSessionKey(){
+        openAiSessionKey?.fill('\u0000')
+        openAiSessionKey=null
+        state.update{it.copy(message=if(System.getenv("OPENAI_API_KEY").isNullOrBlank())"OPENAI / NO KEY CONFIGURED" else "OPENAI / USING ENVIRONMENT KEY")}
+    }
+    fun openAiCredentialSource():String=when{
+        openAiSessionKey?.isNotEmpty()==true -> "session"
+        !System.getenv("OPENAI_API_KEY").isNullOrBlank() -> "environment"
+        else -> "missing"
     }
     fun testProvider(id:String):ConnectionStatus=providers.get(id).testConnection()
     fun modelsFor(id:String)=providers.get(id).models()
@@ -732,7 +753,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     private fun assetForCurrent():ImageAsset?=currentVersionId()?.let(graph::get)?.let{assets[it.assetId]}
     private fun sync(message:String){val pp=paths;state.update{it.copy(projectName=project?.name?:"NO PROJECT",projectRoot=project?.root?:"",currentVersion=project?.currentVersionId?:"V---",versions=graph.all(),jobs=engine?.snapshot().orEmpty(),referencePaths=if(pp==null)emptyList() else activeReferenceAssets().map{x->pp.root.resolve(x.path).toString()},message=message)}}
     private fun closeProject(){engine?.close();db?.close();engine=null;db=null;project=null;paths=null;assets.clear();generations.clear();directives.clear();activeReferenceIds.clear();currentMaskId=null;prompts=PromptLibrary();graph=VersionGraph()}
-    override fun close(){closeProject()}
+    override fun close(){openAiSessionKey?.fill('\u0000');openAiSessionKey=null;closeProject()}
     private fun readProjectJson(p:Path):Map<String,String>{if(!Files.exists(p))return emptyMap();val t=Files.readString(p);return Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"").findAll(t).associate{it.groupValues[1] to it.groupValues[2]}}
     private fun sha256(bytes:ByteArray)=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
 }
