@@ -68,8 +68,9 @@ class OpenRouterImageProvider(
         val body=fields.filter{it.second!=null}.joinToString(prefix="{",postfix="}") {
             JsonUtil.quote(it.first)+":"+it.second
         }
-        val(code,json)=http.json("POST",baseUrl.trimEnd('/')+"/images",headers(),body,timeoutSeconds=120)
-        if(code !in 200..299) error("OpenRouter image HTTP $code: "+json.take(800))
+        val endpoint=baseUrl.trimEnd('/')+"/images"
+        val(code,json)=http.json("POST",endpoint,headers(),body,timeoutSeconds=120)
+        if(code !in 200..299) throw ProviderHttpException("OpenRouter image",code,endpoint,json)
         val payloads=JsonUtil.allStringFields(json,"b64_json")
         if(payloads.isEmpty()) error("OpenRouter image response contained no data[].b64_json payload")
         val mediaTypes=JsonUtil.allStringFields(json,"media_type")
