@@ -154,6 +154,55 @@ class CoreBehaviorTest {
         }
     }
 
+    @Test fun deterministicProviderHttpFailureFailsOnceWithUsefulMessage(){
+        val root=Files.createTempDirectory("cosmosis-provider-http-failure")
+        val store=SqliteStore(root.resolve("jobs.db")).also{it.migrate()}
+        val attempts=java.util.concurrent.atomic.AtomicInteger(0)
+        val provider=object:ImageProvider{
+            override val id="httpfail"
+            private val def=ModelDefinition("httpfail","image","Image",ProviderCapabilities(textToImage=true))
+            override fun models()=listOf(def)
+            override fun generate(request:GenerationRequest):GenerationResult{
+                attempts.incrementAndGet()
+                throw ProviderHttpException("OpenRouter image",402,"https://openrouter.ai/api/v1/images","{\"error\":\"minimum balance required\"}")
+            }
+            override fun edit(request:GenerationRequest):GenerationResult=generate(request)
+            override fun testConnection()=ConnectionStatus(true,"ok",1)
+        }
+        val registry=ProviderRegistry().register(provider)
+        val done=java.util.concurrent.CountDownLatch(1)
+        var failure:Throwable?=null
+        val engine=JobEngine(registry,store,1)
+        try{
+            engine.submit(
+                "httpfail",
+                GenerationRequest(prompt="x",model="image"),
+                false,
+                JobBudget(maxGenerations=1,maxRetries=2,timeoutSeconds=5)
+            ){result->failure=result.exceptionOrNull();done.countDown()}
+            assertTrue(done.await(5,java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals(1,attempts.get())
+            val job=engine.snapshot().single()
+            assertEquals(JobState.FAILED,job.state)
+            assertEquals(0,job.retryCount)
+            assertNotNull(job.error)
+            assertContains(job.error!!,"HTTP 402")
+            assertContains(job.error!!,"minimum balance required")
+            assertContains(ProviderFailureText.describe(requireNotNull(failure)),"HTTP 402")
+        }finally{
+            engine.close();store.close()
+        }
+    }
+
+    @Test fun providerFailureTextNeverReturnsNullOrBlank(){
+        assertEquals("IllegalStateException",ProviderFailureText.describe(IllegalStateException()))
+        val nested=RuntimeException(null,java.net.ConnectException())
+        val text=ProviderFailureText.describe(nested)
+        assertTrue(text.isNotBlank())
+        assertContains(text,"RuntimeException")
+        assertContains(text,"ConnectException")
+    }
+
     @Test fun activeCustomRouteRebindsWhenManualModelChanges(){
         val state=studio.cosmosis.ui.StudioState()
         val controller=studio.cosmosis.ui.StudioController(state,Files.createTempDirectory("cosmosis-docs"))
@@ -194,7 +243,9 @@ class CoreBehaviorTest {
             assertContains(body,"\"model\":\"image/model\"")
             assertFalse(body.contains("\"quality\":\"auto\""))
             assertFalse(body.contains("\"n\":1"))
-            send(exchange,200,"""{"data":[{"b64_json":"$b64","media_type":"image/png"}]}""")
+            if(body.contains("\"prompt\":\"force-error\""))
+                send(exchange,402,"""{"error":{"message":"minimum balance required"}}""")
+            else send(exchange,200,"""{"data":[{"b64_json":"$b64","media_type":"image/png"}]}""")
         }
         server.start()
         try{
@@ -205,6 +256,13 @@ class CoreBehaviorTest {
             val result=provider.generate(GenerationRequest(prompt="x",model="image/model"))
             assertEquals("/api/v1/images",requested.get())
             assertEquals("image/png",result.images.single().mime)
+
+            val failure=assertFailsWith<ProviderHttpException>{
+                provider.generate(GenerationRequest(prompt="force-error",model="image/model"))
+            }
+            assertEquals(402,failure.status)
+            assertFalse(failure.retryable)
+            assertContains(failure.message.orEmpty(),"minimum balance required")
 
             val wrong=OpenRouterImageProvider(apiKey={"test"},baseUrl=base,modelId="text/vision-only")
             val status=wrong.testConnection()
