@@ -7,13 +7,86 @@ object JsonUtil {
     fun quote(s:String)="\"${esc(s)}\""
     fun obj(vararg values:Pair<String,String?>):String = values.filter{it.second!=null}.joinToString(prefix="{",postfix="}") { quote(it.first)+":"+it.second }
     fun arr(values:Iterable<String>):String=values.joinToString(prefix="[",postfix="]")
-    fun stringField(json:String,name:String):String? {
-        val r=Regex("\\\"${Regex.escape(name)}\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
-        return r.find(json)?.groupValues?.get(1)?.let(::unescape)
+    fun stringField(json:String,name:String):String? =
+        stringFields(json,name,firstOnly=true).firstOrNull()
+
+    fun allStringFields(json:String,name:String):List<String> =
+        stringFields(json,name,firstOnly=false)
+
+    /**
+     * Linear scanner for JSON string fields.
+     *
+     * Successful image responses can contain multi-megabyte base64 strings.
+     * A repeated-regex capture can exhaust the JVM regex call stack on those
+     * payloads, so field extraction is deliberately iterative.
+     */
+    private fun stringFields(json:String,name:String,firstOnly:Boolean):List<String> {
+        val out=mutableListOf<String>()
+        var i=0
+        while(i<json.length){
+            val quoteIndex=json.indexOf('"',i)
+            if(quoteIndex<0)break
+            val key=readJsonString(json,quoteIndex) ?: break
+            var cursor=skipWhitespace(json,key.endExclusive)
+            if(cursor<json.length && json[cursor]==':'){
+                cursor=skipWhitespace(json,cursor+1)
+                if(key.value==name && cursor<json.length && json[cursor]=='"'){
+                    val value=readJsonString(json,cursor)
+                    if(value!=null){
+                        out+=value.value
+                        if(firstOnly)return out
+                        i=value.endExclusive
+                        continue
+                    }
+                }
+            }
+            i=key.endExclusive.coerceAtLeast(quoteIndex+1)
+        }
+        return out
     }
-    fun allStringFields(json:String,name:String):List<String> {
-        val r=Regex("\\\"${Regex.escape(name)}\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
-        return r.findAll(json).map { unescape(it.groupValues[1]) }.toList()
+
+    private data class ParsedJsonString(val value:String,val endExclusive:Int)
+
+    private fun skipWhitespace(json:String,start:Int):Int {
+        var i=start
+        while(i<json.length && json[i].isWhitespace())i++
+        return i
+    }
+
+    private fun readJsonString(json:String,startQuote:Int):ParsedJsonString? {
+        if(startQuote !in json.indices || json[startQuote]!='"')return null
+        val out=StringBuilder()
+        var i=startQuote+1
+        while(i<json.length){
+            val c=json[i]
+            when(c){
+                '"' -> return ParsedJsonString(out.toString(),i+1)
+                '\\' -> {
+                    if(i+1>=json.length)return null
+                    val n=json[i+1]
+                    when(n){
+                        '"' -> out.append('"')
+                        '\\' -> out.append('\\')
+                        '/' -> out.append('/')
+                        'b' -> out.append('\b')
+                        'f' -> out.append('\u000c')
+                        'n' -> out.append('\n')
+                        'r' -> out.append('\r')
+                        't' -> out.append('\t')
+                        'u' -> {
+                            if(i+5>=json.length)return null
+                            val code=json.substring(i+2,i+6).toIntOrNull(16) ?: return null
+                            out.append(code.toChar())
+                            i+=4
+                        }
+                        else -> out.append(n)
+                    }
+                    i+=2
+                }
+                else -> { out.append(c);i++ }
+            }
+        }
+        return null
     }
 
     /**
@@ -40,19 +113,4 @@ object JsonUtil {
         return found.values.toList()
     }
 
-    private fun unescape(value:String):String = buildString {
-        var i=0
-        while(i<value.length){
-            val c=value[i]
-            if(c!='\\' || i+1>=value.length){ append(c);i++;continue }
-            val n=value[i+1]
-            when(n){
-                'n'->append('\n');'r'->append('\r');'t'->append('\t');'"'->append('"');'\\'->append('\\');'/'->append('/')
-                'b'->append('\b');'f'->append('\u000c')
-                'u'-> if(i+5<value.length){ value.substring(i+2,i+6).toIntOrNull(16)?.let{append(it.toChar());i+=4} ?: append('u') } else append('u')
-                else->append(n)
-            }
-            i+=2
-        }
-    }
 }
