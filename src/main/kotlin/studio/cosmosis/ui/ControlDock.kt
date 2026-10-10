@@ -108,7 +108,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         preferredSize=Dimension(120,4)
         border=null
     }
-    private val cancelRequest=JButton("CANCEL REQUEST").apply{
+    private val cancelRequest=JButton("CANCEL JOB").apply{
         isVisible=false
         font=Font(Font.MONOSPACED,Font.PLAIN,10)
         addActionListener{controller.cancelActiveJobs()}
@@ -294,7 +294,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         layout=BorderLayout(0,8);workerList.selectionMode=ListSelectionModel.SINGLE_SELECTION;add(JScrollPane(workerList),BorderLayout.CENTER)
         val actions=panel(FlowLayout(FlowLayout.LEFT,5,5))
         button(actions,"RESUME SELECTED"){workerList.selectedValue?.let{runCatching{controller.resumeJob(it.id)}.onSuccess{status.text="RESUME QUEUED / "+it.id}.onFailure(::showError)}}
-        button(actions,"CANCEL ACTIVE"){runCatching{controller.cancelActiveJobs()}.onSuccess{n->status.text=if(n==0)"NO ACTIVE JOBS" else "CANCEL REQUESTED / "+n+" JOB(S)"}.onFailure(::showError)}
+        button(actions,"CANCEL ACTIVE"){runCatching{controller.cancelActiveJobs()}.onSuccess{n->status.text=if(n==0)"NO ACTIVE JOBS" else "CANCEL JOBED / "+n+" JOB(S)"}.onFailure(::showError)}
         add(actions,BorderLayout.SOUTH)
     }
 
