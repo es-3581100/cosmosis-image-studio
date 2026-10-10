@@ -72,7 +72,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         prompts=PromptLibrary(db!!.loadPrompts(),db!!.loadPromptRevisions())
         graph=VersionGraph(db!!.loadVersions())
         directives.clear();directives+=db!!.loadDirectives()
-        engine=JobEngine(providers,db!!,2)
+        engine=JobEngine(providers,db!!,2,::handleJobUpdate)
         restoreProjectSettings()
         seedPremade();agentIndex.rebuild();sync("PROJECT CREATED")
     }
@@ -89,7 +89,7 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         db!!.loadAssets().forEach{assets[it.id]=it}
         generations+=db!!.loadGenerations()
         directives.clear();directives+=db!!.loadDirectives()
-        engine=JobEngine(providers,db!!,2)
+        engine=JobEngine(providers,db!!,2,::handleJobUpdate)
         restoreProjectSettings()
         seedPremade();agentIndex.rebuild()
         val a=assetForCurrent()
@@ -648,6 +648,23 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         val firstAsset=assets[outputIds.firstOrNull()];val firstPath=outputPaths.firstOrNull()?.toString()
         currentMaskId=null;state.update{it.copy(imagePath=firstPath,imageWidth=firstAsset?.width?:0,imageHeight=firstAsset?.height?:0,currentVersion=project!!.currentVersionId?:"V---",versions=graph.all(),jobs=eng.snapshot(),maskPath=null,maskOverlayPath=null,analysisRegions=emptyList(),jobState="COMPLETE",message="GENERATION COMPLETE / "+outputIds.size+" OUTPUT(S)")}
         return outputPaths
+    }
+
+    private fun handleJobUpdate(job:WorkerJob){
+        val snapshot=engine?.snapshot().orEmpty()
+        val requestId=job.payload["requestId"]?.takeLast(12) ?: job.id.takeLast(12)
+        val message=when(job.state){
+            JobState.QUEUED -> "QUEUED / "+requestId
+            JobState.RUNNING -> if(job.retryCount>0)
+                "RUNNING / "+requestId+" / RETRY "+job.retryCount+"/"+job.maxRetries
+            else "RUNNING / "+requestId+" / waiting for provider"
+            JobState.WAITING -> "WAITING / "+requestId+" / provider response"
+            JobState.COMPLETE -> "PROVIDER COMPLETE / "+requestId+" / admitting result"
+            JobState.FAILED -> "FAILED / "+requestId+" / "+(job.error?:"unknown provider error")
+            JobState.CANCELLED -> "CANCELLED / "+requestId
+            JobState.INTERRUPTED -> "INTERRUPTED / "+requestId
+        }
+        state.update{it.copy(jobs=snapshot,jobState=job.state.name,message=message)}
     }
 
     fun cancelActiveJobs():Int{
