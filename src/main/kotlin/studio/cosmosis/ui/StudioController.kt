@@ -592,10 +592,15 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
         result.onSuccess{res->
             runCatching{admitGenerationResult(requireNotNull(job){"Generation job disappeared"},res)}
                 .onSuccess{done(Result.success(it))}
-                .onFailure{e->state.update{it.copy(jobs=eng.snapshot(),jobState="FAILED",message="FAILED / "+e.message)};done(Result.failure(e))}
+                .onFailure{e->
+                    val detail=ProviderFailureText.describe(e)
+                    state.update{it.copy(jobs=eng.snapshot(),jobState="FAILED",message="FAILED / "+detail)}
+                    done(Result.failure(e))
+                }
         }.onFailure{e->
             val cancelled=e is kotlinx.coroutines.CancellationException
-            state.update{it.copy(jobs=eng.snapshot(),jobState=if(cancelled)"CANCELLED" else "FAILED",message=(if(cancelled)"CANCELLED" else "FAILED")+" / "+e.message)}
+            val detail=if(cancelled)"cancelled" else ProviderFailureText.describe(e)
+            state.update{it.copy(jobs=eng.snapshot(),jobState=if(cancelled)"CANCELLED" else "FAILED",message=(if(cancelled)"CANCELLED" else "FAILED")+" / "+detail)}
             done(Result.failure(e))
         }
     }
