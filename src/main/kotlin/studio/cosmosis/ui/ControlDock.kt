@@ -5,6 +5,8 @@ import studio.cosmosis.provider.ModelRegistry
 import studio.cosmosis.theme.OffworldTheme
 import java.awt.*
 import java.awt.event.KeyEvent
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.*
@@ -130,20 +132,46 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private val transparentOutput=JCheckBox("TRANSPARENT").apply{background=OffworldTheme.background;foreground=OffworldTheme.foreground}
     private val providerWorkflow=JComboBox(arrayOf("direct","responses"))
     private val reasoningModel=JTextField("").apply{toolTipText="Required for OpenAI Responses image workflow; can also use OPENAI_RESPONSES_MODEL"}
+    private val openAiKey=JPasswordField().apply{toolTipText="Session only. Never written to the project or settings."}
+    private val openAiKeyStatus=JLabel()
+    private var syncingProviderModel=false
+    private var keyDispatcher:KeyEventDispatcher?=null
     private var dirty=false
     private var selectedPromptId:String?=null
     private var premadeVisible=true
 
     init {
-        applyTheme();defaultCloseOperation=DO_NOTHING_ON_CLOSE;layout=BorderLayout();minimumSize=Dimension(720,780);preferredSize=Dimension(880,920)
+        applyTheme();defaultCloseOperation=DO_NOTHING_ON_CLOSE
+        addWindowListener(object:WindowAdapter(){
+            override fun windowClosing(e:WindowEvent){requestClose()}
+            override fun windowClosed(e:WindowEvent){keyDispatcher?.let{KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(it)};keyDispatcher=null}
+        })
+        layout=BorderLayout();minimumSize=Dimension(720,780);preferredSize=Dimension(880,920)
         val tabs=JTabbedPane();tabs.addTab("PROMPT",promptPanel());tabs.addTab("LIBRARY",libraryPanel());tabs.addTab("REFERENCES",referencePanel());tabs.addTab("VERSIONS",versionPanel());tabs.addTab("WORKERS",workerPanel());tabs.addTab("DIRECTIVES",directivePanel());tabs.addTab("SETTINGS",settingsPanel());add(tabs,BorderLayout.CENTER);add(status,BorderLayout.SOUTH);status.border=BorderFactory.createEmptyBorder(8,13,8,13)
         prompt.document.addUndoableEditListener(UndoableEditListener{e:UndoableEditEvent->undo.addEdit(e.edit)})
         prompt.document.addDocumentListener(object:DocumentListener{override fun insertUpdate(e:DocumentEvent)=mark();override fun removeUpdate(e:DocumentEvent)=mark();override fun changedUpdate(e:DocumentEvent)=mark();fun mark(){dirty=true;status.text="UNSAVED PROMPT"}})
-        provider.addActionListener{refreshModels()};workflowMode.addActionListener{(workflowMode.selectedItem as? WorkflowMode)?.let(controller::setWorkflowMode)};refreshModels()
+        provider.addActionListener{
+            if(!syncingProviderModel){
+                refreshModels()
+                val pid=provider.selectedItem?.toString()?:return@addActionListener
+                val mid=model.selectedItem?.toString()?.trim().orEmpty()
+                if(mid.isNotBlank())state.update{it.copy(provider=pid.uppercase(),model=mid,message="ROUTE / "+pid.uppercase()+" / "+mid)}
+            }
+        }
+        model.addActionListener{
+            refreshCapabilities()
+            if(!syncingProviderModel){
+                val mid=model.selectedItem?.toString()?.trim().orEmpty()
+                if(mid.isNotBlank())state.update{it.copy(model=mid)}
+            }
+        }
+        workflowMode.addActionListener{(workflowMode.selectedItem as? WorkflowMode)?.let(controller::setWorkflowMode)}
+        refreshModels()
         state.listen { s -> SwingUtilities.invokeLater {
             status.text=s.message;workers.text=s.jobs.joinToString("\n"){"${it.id.take(12)}  ${it.state}  ${it.type}  retry=${it.retryCount}"}
             workerList.setListData(s.jobs.map{JobRef(it.id,it.id.take(12)+" / "+it.state+" / "+it.type+" / retry="+it.retryCount)}.toTypedArray())
             if(!prompt.hasFocus() && !dirty && s.promptBody.isNotBlank()){prompt.text=s.promptBody;promptTitle.text=s.promptTitle}
+            syncProviderModelFromState(s)
             if(workflowMode.selectedItem!=s.workflowMode)workflowMode.selectedItem=s.workflowMode
             maskVisible.isSelected=s.maskVisible;maskColor.text=s.maskOverlayColor;maskOpacity.value=(s.maskOverlayOpacity*100).toInt()
             reducedMotion.isSelected=s.reducedMotion;motionLevel.selectedItem=s.motionLevel;uiDensity.selectedItem=s.uiDensity
@@ -228,6 +256,24 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private fun settingsPanel():JPanel=panel().apply {
         layout=BoxLayout(this,BoxLayout.Y_AXIS)
         add(label("PROVIDER ROUTE"));add(Box.createVerticalStrut(8))
+        add(label("OPENAI API KEY / SESSION ONLY"))
+        add(openAiKey)
+        add(openAiKeyStatus)
+        val openAiActions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(openAiActions,"USE FOR SESSION"){
+            val chars=openAiKey.password
+            try{
+                controller.configureOpenAiSessionKey(chars)
+                openAiKey.text=""
+                provider.selectedItem="openai"
+                refreshModels()
+                refreshOpenAiKeyStatus()
+                status.text="OPENAI / SESSION KEY READY — use TEST CONNECTION to verify access"
+            }catch(t:Throwable){showError(t)}finally{chars.fill('\u0000')}
+        }
+        button(openAiActions,"CLEAR SESSION KEY"){controller.clearOpenAiSessionKey();openAiKey.text="";refreshOpenAiKeyStatus()}
+        add(openAiActions)
+        refreshOpenAiKeyStatus()
         button(this,"TEST CONNECTION"){val id=provider.selectedItem.toString();runCatching{controller.testProvider(id)}.onSuccess{r->status.text=(if(r.ok)"● READY" else "× FAILED")+" "+id+" / "+r.message+" / "+r.latencyMs+"ms"}.onFailure(::showError)}
         val customUrl=JTextField("http://127.0.0.1:4000/v1");val customEnv=JTextField("CUSTOM_OPENAI_API_KEY")
         add(label("CUSTOM OPENAI-COMPATIBLE BASE URL"));add(customUrl);add(label("CUSTOM KEY ENV NAME"));add(customEnv)
@@ -235,7 +281,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
 
         add(Box.createVerticalStrut(13));add(label("MODEL CAPABILITIES"))
         capabilityLabel.background=Color(0x0D,0x0D,0x0B);capabilityLabel.foreground=OffworldTheme.muted;capabilityLabel.font=Font(Font.MONOSPACED,Font.PLAIN,10)
-        add(JScrollPane(capabilityLabel));model.addActionListener{refreshCapabilities()};refreshCapabilities()
+        add(JScrollPane(capabilityLabel));refreshCapabilities()
 
         add(Box.createVerticalStrut(13));add(label("OFFWORLD APPEARANCE / DARK ONLY"))
         add(maskVisible);add(label("MASK OVERLAY COLOR  #RRGGBB"));add(maskColor);add(label("MASK OVERLAY OPACITY %"));add(maskOpacity)
@@ -356,7 +402,41 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         runCatching{controller.runAgentBuild(intent,provider.selectedItem.toString(),modelId,selectedVariants,budget)}.onSuccess{id->status.text="AGENT BUILD / "+id+" / QUEUED"}.onFailure(::showError)
     }
 
-    private fun refreshModels(){val id=provider.selectedItem?.toString()?:return;val current=model.editor.item?.toString();val defs=runCatching{controller.modelsFor(id)}.getOrDefault(emptyList());model.removeAllItems();defs.forEach{model.addItem(it.id)};if(current!=null&&defs.none{it.id==current})model.editor.item=current else if(model.itemCount>0)model.selectedIndex=0;refreshCapabilities()}
+    private fun refreshModels(){
+        val id=provider.selectedItem?.toString()?:return
+        val current=model.selectedItem?.toString()?.trim()?.takeIf{it.isNotBlank()} ?: model.editor.item?.toString()?.trim()?.takeIf{it.isNotBlank()}
+        val defs=runCatching{controller.modelsFor(id)}.getOrDefault(emptyList())
+        val selected=preferredModelId(defs,current)
+        model.removeAllItems()
+        defs.forEach{model.addItem(it.id)}
+        if(selected!=null)model.selectedItem=selected else model.editor.item=null
+        refreshCapabilities()
+    }
+    private fun syncProviderModelFromState(snapshot:UiSnapshot){
+        val pid=snapshot.provider.lowercase()
+        if((0 until provider.itemCount).none{provider.getItemAt(it)==pid})return
+        syncingProviderModel=true
+        try{
+            if(provider.selectedItem?.toString()!=pid)provider.selectedItem=pid
+            refreshModels()
+            val defs=runCatching{controller.modelsFor(pid)}.getOrDefault(emptyList())
+            preferredModelId(defs,snapshot.model)?.let{model.selectedItem=it}
+        }finally{syncingProviderModel=false}
+    }
+    private fun refreshOpenAiKeyStatus(){
+        openAiKeyStatus.text=when(controller.openAiCredentialSource()){
+            "session" -> "● Session key loaded (not persisted)"
+            "environment" -> "● OPENAI_API_KEY detected in launch environment"
+            else -> "○ No OpenAI key configured"
+        }
+    }
+    private fun requestClose(){
+        if(dirty){
+            val choice=JOptionPane.showConfirmDialog(this,"Close Advanced and discard unsaved prompt edits?","UNSAVED PROMPT",JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)
+            if(choice!=JOptionPane.YES_OPTION)return
+        }
+        dispose()
+    }
     private fun chooseProject(create:Boolean){val fc=JFileChooser().apply{fileSelectionMode=JFileChooser.DIRECTORIES_ONLY};if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return;runCatching{if(create)controller.createProject(fc.selectedFile.toPath(),fc.selectedFile.name)else controller.openProject(fc.selectedFile.toPath())}.onFailure(::showError)}
     private fun chooseImage(){val fc=JFileChooser();if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return;runCatching{controller.importImage(fc.selectedFile.toPath())}.onFailure(::showError)}
     private fun openImageToPrompt(){val path=state.get().imagePath?:return showError(IllegalStateException("Import/select an image first"));val dlg=ImageToPromptDialog(this,Path.of(path));dlg.isVisible=true;if(!dlg.accepted)return;val text=dlg.promptText();prompt.text=text;promptTitle.text=dlg.titleField.text.trim().ifBlank{"Image → Prompt"};treePath.text=dlg.pathField.text.trim().ifBlank{"MY PROMPTS/Image to Prompt"};dirty=true;if(dlg.saveToLibrary)runCatching{controller.savePrompt(promptTitle.text,text,treePath.text)}.onSuccess{p->selectedPromptId=p.id;dirty=false;refreshTrees();status.text="IMAGE → PROMPT SAVED / ${p.id}"}.onFailure(::showError)}
@@ -504,7 +584,8 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         }.onFailure{capabilityLabel.text="Unavailable: "+it.message}
     }
     private fun cropDialog(){val s=state.get();if(s.imagePath==null)return showError(IllegalStateException("Import/select an image first"));val x=JTextField("0");val y=JTextField("0");val w=JTextField(s.imageWidth.toString());val h=JTextField(s.imageHeight.toString());val form=JPanel(GridLayout(0,2,8,8)).apply{add(label("X"));add(x);add(label("Y"));add(y);add(label("WIDTH"));add(w);add(label("HEIGHT"));add(h)};if(JOptionPane.showConfirmDialog(this,form,"CROP / PIXELS",JOptionPane.OK_CANCEL_OPTION)!=JOptionPane.OK_OPTION)return;runCatching{controller.cropCurrent(x.text.toInt(),y.text.toInt(),w.text.toInt(),h.text.toInt())}.onFailure(::showError)}
-    private fun installKeys(){KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher{e->
+    private fun installKeys(){
+        val dispatcher=KeyEventDispatcher{e->
         if(e.id!=KeyEvent.KEY_PRESSED)return@addKeyEventDispatcher false
         val ctrl=e.isControlDown||e.isMetaDown
         val focus=KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
@@ -523,7 +604,10 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             !typing&&e.keyCode==KeyEvent.VK_0->{controller.resetView();true}
             else->false
         }
-    }}
+        }
+        keyDispatcher=dispatcher
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(dispatcher)
+    }
     private fun applyTheme(){installOffworldDefaults()}
     private fun applyThemeToTree(root:Component){
         val field=Color(0x13,0x13,0x10)
