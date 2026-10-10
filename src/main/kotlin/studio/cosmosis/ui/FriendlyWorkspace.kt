@@ -615,7 +615,7 @@ fun launchFriendlyWorkspace(
                     }
                 }
                 val busy=snapshot.jobState in setOf("QUEUED","RUNNING","WAITING")
-                val actionText = if(busy) "Cancel request" else when (snapshot.workflowMode) {
+                val actionText = if(busy) "Cancel job" else when (snapshot.workflowMode) {
                     WorkflowMode.EDIT_EXISTING -> "Apply edit"
                     WorkflowMode.MASK_EDIT -> "Apply masked edit"
                     WorkflowMode.REFERENCE_REMIX -> "Create remix"
