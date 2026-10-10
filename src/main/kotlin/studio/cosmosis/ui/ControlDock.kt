@@ -311,6 +311,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         add(Box.createVerticalStrut(13));add(label("CUSTOM OPENAI-COMPATIBLE ROUTE"))
         add(label("BASE URL"));add(customUrl)
         add(label("MODEL ID / MANUAL"));add(customModel)
+        add(label("OpenRouter note: TEST SELECTED PROVIDER checks /images/models; :free text/vision models cannot render images."))
         add(label("API KEY / SESSION ONLY (OPTIONAL IF ENV IS SET)"));add(customKey)
         add(label("FALLBACK KEY ENV NAME"));add(customEnv)
         add(customKeyStatus)
