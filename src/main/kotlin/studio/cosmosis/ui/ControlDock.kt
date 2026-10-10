@@ -134,6 +134,13 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private val reasoningModel=JTextField("").apply{toolTipText="Required for OpenAI Responses image workflow; can also use OPENAI_RESPONSES_MODEL"}
     private val openAiKey=JPasswordField().apply{toolTipText="Session only. Never written to the project or settings."}
     private val openAiKeyStatus=JLabel()
+    private val geminiKey=JPasswordField().apply{toolTipText="Session only. Never written to the project or settings."}
+    private val geminiKeyStatus=JLabel()
+    private val customUrl=JTextField("http://127.0.0.1:4000/v1")
+    private val customModel=JTextField("").apply{toolTipText="Exact model ID exposed by the OpenAI-compatible gateway, e.g. provider/model-name"}
+    private val customKey=JPasswordField().apply{toolTipText="Optional session-only bearer key for this custom route."}
+    private val customEnv=JTextField("CUSTOM_OPENAI_API_KEY").apply{toolTipText="Fallback environment variable name used when no session key is loaded."}
+    private val customKeyStatus=JLabel()
     private var syncingProviderModel=false
     private var keyDispatcher:KeyEventDispatcher?=null
     private var dirty=false
@@ -256,11 +263,12 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private fun settingsPanel():JPanel=panel().apply {
         layout=BoxLayout(this,BoxLayout.Y_AXIS)
         add(label("PROVIDER ROUTE"));add(Box.createVerticalStrut(8))
+
         add(label("OPENAI API KEY / SESSION ONLY"))
         add(openAiKey)
         add(openAiKeyStatus)
         val openAiActions=panel(FlowLayout(FlowLayout.LEFT,5,5))
-        button(openAiActions,"USE FOR SESSION"){
+        button(openAiActions,"USE OPENAI"){
             val chars=openAiKey.password
             try{
                 controller.configureOpenAiSessionKey(chars)
@@ -268,16 +276,68 @@ class ControlDock(private val controller:StudioController,private val state:Stud
                 provider.selectedItem="openai"
                 refreshModels()
                 refreshOpenAiKeyStatus()
-                status.text="OPENAI / SESSION KEY READY — use TEST CONNECTION to verify access"
+                status.text="OPENAI / SESSION KEY READY — use TEST SELECTED PROVIDER to verify"
             }catch(t:Throwable){showError(t)}finally{chars.fill('\u0000')}
         }
-        button(openAiActions,"CLEAR SESSION KEY"){controller.clearOpenAiSessionKey();openAiKey.text="";refreshOpenAiKeyStatus()}
+        button(openAiActions,"CLEAR OPENAI SESSION KEY"){controller.clearOpenAiSessionKey();openAiKey.text="";refreshOpenAiKeyStatus()}
         add(openAiActions)
         refreshOpenAiKeyStatus()
-        button(this,"TEST CONNECTION"){val id=provider.selectedItem.toString();runCatching{controller.testProvider(id)}.onSuccess{r->status.text=(if(r.ok)"● READY" else "× FAILED")+" "+id+" / "+r.message+" / "+r.latencyMs+"ms"}.onFailure(::showError)}
-        val customUrl=JTextField("http://127.0.0.1:4000/v1");val customEnv=JTextField("CUSTOM_OPENAI_API_KEY")
-        add(label("CUSTOM OPENAI-COMPATIBLE BASE URL"));add(customUrl);add(label("CUSTOM KEY ENV NAME"));add(customEnv)
-        button(this,"REGISTER CUSTOM ROUTE"){runCatching{controller.configureCustomProvider(customUrl.text.trim(),customEnv.text.trim())}.onSuccess{provider.selectedItem="custom"}.onFailure(::showError)}
+
+        add(Box.createVerticalStrut(13));add(label("GOOGLE / GEMINI API KEY / SESSION ONLY"))
+        add(geminiKey)
+        add(geminiKeyStatus)
+        val geminiActions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(geminiActions,"USE GEMINI"){
+            val chars=geminiKey.password
+            try{
+                controller.configureGeminiSessionKey(chars)
+                geminiKey.text=""
+                provider.selectedItem="gemini"
+                refreshModels()
+                refreshGeminiKeyStatus()
+                status.text="GEMINI / SESSION KEY READY — use TEST SELECTED PROVIDER to verify"
+            }catch(t:Throwable){showError(t)}finally{chars.fill('\u0000')}
+        }
+        button(geminiActions,"CLEAR GEMINI SESSION KEY"){controller.clearGeminiSessionKey();geminiKey.text="";refreshGeminiKeyStatus()}
+        add(geminiActions)
+        refreshGeminiKeyStatus()
+
+        add(Box.createVerticalStrut(13));add(label("CUSTOM OPENAI-COMPATIBLE ROUTE"))
+        add(label("BASE URL"));add(customUrl)
+        add(label("MODEL ID / MANUAL"));add(customModel)
+        add(label("API KEY / SESSION ONLY (OPTIONAL IF ENV IS SET)"));add(customKey)
+        add(label("FALLBACK KEY ENV NAME"));add(customEnv)
+        add(customKeyStatus)
+        val customActions=panel(FlowLayout(FlowLayout.LEFT,5,5))
+        button(customActions,"REGISTER / UPDATE"){
+            val chars=customKey.password
+            try{
+                controller.configureCustomProvider(customUrl.text.trim(),customModel.text.trim(),chars,customEnv.text.trim())
+                customKey.text=""
+                refreshCustomKeyStatus()
+                status.text="CUSTOM ROUTE REGISTERED / "+customModel.text.trim()+" — current provider unchanged"
+            }catch(t:Throwable){showError(t)}finally{chars.fill('\u0000')}
+        }
+        button(customActions,"USE CUSTOM"){
+            runCatching{
+                val mid=controller.customModelId()?:error("Register the custom route and model ID first")
+                provider.selectedItem="custom"
+                refreshModels()
+                model.selectedItem=mid
+                state.update{it.copy(provider="CUSTOM",model=mid,message="ROUTE / CUSTOM / "+mid)}
+            }.onFailure(::showError)
+        }
+        button(customActions,"CLEAR CUSTOM SESSION KEY"){controller.clearCustomSessionKey();customKey.text="";refreshCustomKeyStatus()}
+        add(customActions)
+        refreshCustomKeyStatus()
+
+        add(Box.createVerticalStrut(13))
+        button(this,"TEST SELECTED PROVIDER"){
+            val id=provider.selectedItem.toString()
+            runCatching{controller.testProvider(id)}
+                .onSuccess{r->status.text=(if(r.ok)"● READY" else "× FAILED")+" "+id+" / "+r.message+" / "+r.latencyMs+"ms"}
+                .onFailure(::showError)
+        }
 
         add(Box.createVerticalStrut(13));add(label("MODEL CAPABILITIES"))
         capabilityLabel.background=Color(0x0D,0x0D,0x0B);capabilityLabel.foreground=OffworldTheme.muted;capabilityLabel.font=Font(Font.MONOSPACED,Font.PLAIN,10)
@@ -428,6 +488,20 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             "session" -> "● Session key loaded (not persisted)"
             "environment" -> "● OPENAI_API_KEY detected in launch environment"
             else -> "○ No OpenAI key configured"
+        }
+    }
+    private fun refreshGeminiKeyStatus(){
+        geminiKeyStatus.text=when(controller.geminiCredentialSource()){
+            "session" -> "● Session key loaded (not persisted)"
+            "environment" -> "● GEMINI_API_KEY / GOOGLE_API_KEY detected in launch environment"
+            else -> "○ No Google / Gemini key configured"
+        }
+    }
+    private fun refreshCustomKeyStatus(){
+        customKeyStatus.text=when(controller.customCredentialSource()){
+            "session" -> "● Custom session key loaded (not persisted)"
+            "environment" -> "● Custom key environment variable detected"
+            else -> "○ No custom key loaded; register can still use an environment key later"
         }
     }
     private fun requestClose(){
