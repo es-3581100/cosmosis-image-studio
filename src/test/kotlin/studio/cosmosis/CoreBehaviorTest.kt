@@ -11,6 +11,7 @@ import studio.cosmosis.provider.*
 import studio.cosmosis.security.Redaction
 import studio.cosmosis.storage.SqliteStore
 import studio.cosmosis.workers.JobEngine
+import studio.cosmosis.ui.preferredModelId
 import java.nio.file.Files
 import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
@@ -102,6 +103,17 @@ class CoreBehaviorTest {
         assertFailsWith<CapabilityMismatchException>{
             CapabilityValidator.validate(GenerationRequest(prompt="x",model="responses",previousResponseId="resp_1"),responses)
         }
+    }
+
+    @Test fun providerUiKeepsValidModelAndFallsBackFromInvalidModel(){
+        val definitions=listOf(
+            ModelDefinition("openai","image-a","Image A",ProviderCapabilities(textToImage=true)),
+            ModelDefinition("openai","image-b","Image B",ProviderCapabilities(textToImage=true))
+        )
+        assertEquals("image-b",preferredModelId(definitions,"image-b"))
+        assertEquals("image-a",preferredModelId(definitions,"local-preview-v1"))
+        assertEquals("image-a",preferredModelId(definitions,null))
+        assertNull(preferredModelId(emptyList(),null))
     }
 
     @Test fun exactModelResolutionRejectsUndeclaredAliases(){
