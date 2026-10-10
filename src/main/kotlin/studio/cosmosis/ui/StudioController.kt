@@ -652,6 +652,22 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     }
     fun setCompareVersion(id:String?){val path=id?.let(graph::get)?.let{assets[it.assetId]}?.let{paths!!.root.resolve(it.path).toString()};state.update{it.copy(comparePath=path,compareMode=if(path==null)"OFF" else "SPLIT",message=if(path==null)"COMPARE OFF" else "COMPARE / $id")}}
     fun versionNodes()=graph.all()
+    fun versionPreviews():List<VersionPreview> {
+        val root=paths?.root
+        val current=currentVersionId()
+        return graph.all().map { version ->
+            val asset=assets[version.assetId]
+            VersionPreview(
+                id=version.id,
+                parentId=version.parentId,
+                path=if(root!=null&&asset!=null)root.resolve(asset.path).toString() else null,
+                name=version.name,
+                operation=version.operation.name,
+                createdAt=version.createdAt,
+                current=version.id==current
+            )
+        }
+    }
     fun zoom(delta:Double){state.update{it.copy(zoom=(it.zoom*delta).coerceIn(.1,8.0))}}
     fun resetView(){state.update{it.copy(zoom=1.0,panX=0.0,panY=0.0)}}
 

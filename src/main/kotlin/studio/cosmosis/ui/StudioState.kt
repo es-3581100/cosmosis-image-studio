@@ -6,6 +6,16 @@ import studio.cosmosis.workers.JobPlan
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
 
+data class VersionPreview(
+    val id:String,
+    val parentId:String?,
+    val path:String?,
+    val name:String,
+    val operation:String,
+    val createdAt:String,
+    val current:Boolean
+)
+
 data class UiSnapshot(
     val projectName:String="NO PROJECT",
     val projectRoot:String="",

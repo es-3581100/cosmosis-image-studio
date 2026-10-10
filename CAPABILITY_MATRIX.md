@@ -2,7 +2,7 @@
 
 | Capability | State in this build | Evidence / boundary |
 |---|---|---|
-| Offworld OPENRNDR workspace | Verified single-window graphical runtime on Linux x86_64 CI | Default startup is one persistent OPENRNDR workstation; `ControlDock` is opt-in only. PR #17 run `38005546497` enforced `layout.mode=single-window`, `dock.showing=false`, corrected sRGB Offworld tokens, and captured screenshot SHA-256 `c9d69af12a68cc3efb42b9bf45acc6af5a4f097b6f6f93d4bdef1874a1b6905c`; [checkpoint](docs/verification/ui-single-window-math-by-design-2026-10-09.md) |
+| Friendly Offworld OPENRNDR editor | Verified single-window graphical runtime on Linux x86_64 CI | Default startup is composer + canvas + visual history with Generate/Edit/Mask primary flow; direct prompt editing is native to the OPENRNDR workspace and the prior technical shell is opt-in through `COSMOSIS_LEGACY_WORKSPACE=1`. PR #18 run `38008238098` passed graphical smoke with screenshot SHA-256 `1aa315c794f99bea4e8c8b3c973f49ab75843c6bca40b79a0c12629153c561ca`; [checkpoint](docs/verification/ui-friendly-editor-2026-10-09.md) |
 | Local projects + immutable imports | Implemented | `ProjectStore`, SQLite schema; source and reference imports are immutable project assets |
 | Prompt trees/provenance/search/revisions | Implemented | `PromptLibrary`, `PromptExchange`; core smoke PASS |
 | Smart keywords | Implemented deterministic layer | explicit/imported tags are preserved; regex/frequency tags are separate |
