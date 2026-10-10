@@ -101,8 +101,10 @@ class JobEngine(private val providers:ProviderRegistry,private val store:SqliteS
             }
         }
         result.onSuccess{j.state=JobState.COMPLETE;j.error=null}.onFailure{
-            j.state=if(it is CancellationException)JobState.CANCELLED else JobState.FAILED
-            j.error=it.message
+            j.state=if(it is CancellationException && it !is TimeoutCancellationException)JobState.CANCELLED else JobState.FAILED
+            j.error=if(it is TimeoutCancellationException)
+                "Provider request timed out after "+q.budget.timeoutSeconds+"s"
+            else it.message
         }
         j.updatedAt=nowIso();store.saveJob(j);onJobUpdate(j.copy())
         q.callback(result)
