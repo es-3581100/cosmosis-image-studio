@@ -101,6 +101,18 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private val outputWidth=JTextField("")
     private val outputHeight=JTextField("")
     private val status=JLabel("READY")
+    private val requestProgress=JProgressBar().apply{
+        isStringPainted=false
+        isVisible=false
+        minimum=0;maximum=100
+        preferredSize=Dimension(120,4)
+        border=null
+    }
+    private val cancelRequest=JButton("CANCEL REQUEST").apply{
+        isVisible=false
+        font=Font(Font.MONOSPACED,Font.PLAIN,10)
+        addActionListener{controller.cancelActiveJobs()}
+    }
     private val localTree=JTree(DefaultMutableTreeNode("MY PROMPTS"))
     private val premadeTree=JTree(DefaultMutableTreeNode("PREMADE PROMPTS"))
     private val versionList=JList<VersionRef>()
@@ -154,7 +166,19 @@ class ControlDock(private val controller:StudioController,private val state:Stud
             override fun windowClosed(e:WindowEvent){keyDispatcher?.let{KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(it)};keyDispatcher=null}
         })
         layout=BorderLayout();minimumSize=Dimension(720,780);preferredSize=Dimension(880,920)
-        val tabs=JTabbedPane();tabs.addTab("PROMPT",promptPanel());tabs.addTab("LIBRARY",libraryPanel());tabs.addTab("REFERENCES",referencePanel());tabs.addTab("VERSIONS",versionPanel());tabs.addTab("WORKERS",workerPanel());tabs.addTab("DIRECTIVES",directivePanel());tabs.addTab("SETTINGS",settingsPanel());add(tabs,BorderLayout.CENTER);add(status,BorderLayout.SOUTH);status.border=BorderFactory.createEmptyBorder(8,13,8,13)
+        val tabs=JTabbedPane();tabs.addTab("PROMPT",promptPanel());tabs.addTab("LIBRARY",libraryPanel());tabs.addTab("REFERENCES",referencePanel());tabs.addTab("VERSIONS",versionPanel());tabs.addTab("WORKERS",workerPanel());tabs.addTab("DIRECTIVES",directivePanel());tabs.addTab("SETTINGS",settingsPanel());add(tabs,BorderLayout.CENTER)
+        val statusRow=JPanel(BorderLayout()).apply{
+            background=OffworldTheme.background
+            status.border=BorderFactory.createEmptyBorder(8,13,8,13)
+            add(status,BorderLayout.CENTER)
+            add(cancelRequest,BorderLayout.EAST)
+        }
+        val footer=JPanel(BorderLayout()).apply{
+            background=OffworldTheme.background
+            add(requestProgress,BorderLayout.NORTH)
+            add(statusRow,BorderLayout.CENTER)
+        }
+        add(footer,BorderLayout.SOUTH)
         prompt.document.addUndoableEditListener(UndoableEditListener{e:UndoableEditEvent->undo.addEdit(e.edit)})
         prompt.document.addDocumentListener(object:DocumentListener{override fun insertUpdate(e:DocumentEvent)=mark();override fun removeUpdate(e:DocumentEvent)=mark();override fun changedUpdate(e:DocumentEvent)=mark();fun mark(){dirty=true;status.text="UNSAVED PROMPT"}})
         provider.addActionListener{
@@ -181,7 +205,15 @@ class ControlDock(private val controller:StudioController,private val state:Stud
         workflowMode.addActionListener{(workflowMode.selectedItem as? WorkflowMode)?.let(controller::setWorkflowMode)}
         refreshModels()
         state.listen { s -> SwingUtilities.invokeLater {
-            status.text=s.message;workers.text=s.jobs.joinToString("\n"){"${it.id.take(12)}  ${it.state}  ${it.type}  retry=${it.retryCount}"}
+            status.text=s.message
+            val busy=s.jobState in setOf("QUEUED","RUNNING","WAITING")
+            requestProgress.isVisible=busy
+            requestProgress.isIndeterminate=busy&&!s.reducedMotion
+            if(busy&&s.reducedMotion)requestProgress.value=35
+            cancelRequest.isVisible=busy
+            cancelRequest.isEnabled=busy
+            status.foreground=when(s.jobState){"FAILED"->OffworldTheme.destructive;"COMPLETE"->OffworldTheme.positive;else->OffworldTheme.foreground}
+            workers.text=s.jobs.joinToString("\n"){"${it.id.take(12)}  ${it.state}  ${it.type}  retry=${it.retryCount}"+(it.error?.let{e->"  error="+e}?:"")}
             workerList.setListData(s.jobs.map{JobRef(it.id,it.id.take(12)+" / "+it.state+" / "+it.type+" / retry="+it.retryCount)}.toTypedArray())
             if(!prompt.hasFocus() && !dirty && s.promptBody.isNotBlank()){prompt.text=s.promptBody;promptTitle.text=s.promptTitle}
             syncProviderModelFromState(s)
