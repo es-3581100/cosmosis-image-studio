@@ -769,6 +769,11 @@ fun launchFriendlyWorkspace(
                 val versions = controller.versionPreviews()
                 label("History", historyX + 14.0, headerHeight + 26.0, F_FG, bold = true)
                 label(versions.size.toString(), width - 34.0, headerHeight + 26.0, F_MUTED, tiny = true)
+                if (versions.isEmpty()) {
+                    label("Nothing here yet", historyX + 14.0, headerHeight + 72.0, F_FG, bold = true)
+                    label("Your imports, generations and edits", historyX + 14.0, headerHeight + 92.0, F_MUTED, tiny = true)
+                    label("will appear here as visual history.", historyX + 14.0, headerHeight + 108.0, F_MUTED, tiny = true)
+                }
 
                 val gap = 8.0
                 val pad = 12.0
