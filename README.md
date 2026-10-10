@@ -77,9 +77,24 @@ Interrupted or failed jobs are never auto-resumed. New jobs persist their canoni
 
 The supplied OPENRNDR semantic knowledge tree is preserved conceptually in `docs/agent/openrndr/workstation.html`. It maps drawing/rendering, interaction, image/CV, animation, typography and GPU extension points to Cosmosis responsibilities. It is a selection guide, not a requirement to add every ORX module as a runtime dependency.
 
-## Secrets
+## Provider credentials and custom routes
 
-Use environment variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, and `LITELLM_API_KEY`. LiteLLM uses `LITELLM_BASE_URL`. Secrets are never written to project data by design.
+Environment variables remain supported: `OPENAI_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, and `LITELLM_API_KEY`. LiteLLM uses `LITELLM_BASE_URL`.
+
+The Advanced → Settings panel can also load **OpenAI** and **Google/Gemini** API keys for the current COSMOSIS process. Session keys are held only in memory, are not written to project data/settings/logs, and are cleared when replaced, explicitly cleared, or the controller closes.
+
+Custom OpenAI-compatible gateways have a separate configuration block with:
+
+- base URL;
+- an exact, manually entered model ID;
+- an optional session-only bearer key;
+- an optional fallback environment-variable name.
+
+**Register / Update** changes only the custom route definition. It does not switch the active provider or disturb the OpenAI/Gemini adapters. **Use Custom** explicitly selects the route afterward. The manual model ID becomes the exact declared model for that custom route; arbitrary model strings do not gain OpenAI- or Gemini-specific semantic capabilities.
+
+Gemini's built-in image registry tracks current Nano Banana image routes including `gemini-nano-banana-2.1`, `gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`, and `gemini-3-pro-image`. Provider pricing/quota availability is external and can change; COSMOSIS intentionally does not label a model as free merely because it can be used in Google AI Studio.
+
+Secrets are never written to project data by design.
 
 ## Optional ORML adapters
 
