@@ -9,22 +9,39 @@ Requirements: JDK 21 and Gradle 9.8+. The repository intentionally does not vend
 ```bash
 ./gradlew test
 ./gradlew acceptanceSmoke
-./gradlew run
+./gradlew :run
 ```
 
 `acceptanceSmoke` is offline and uses the deterministic `local-preview-v1` provider. It exercises project creation, immutable source/reference imports, local analysis + derived overlays, prompt/directive persistence, smart masks and overlay settings, generation/edit workers, branching lineage, rotate/resize/upscale transforms, Agent Build + critic output, restart recovery, diagnostics, and HTML report export without provider credentials or paid calls.
 
-### Graphical workstation smoke
+### Friendly desktop editor
 
-The default desktop is now a single persistent OPENRNDR workstation. Project actions and the primary workflow rail live in the canvas shell; the former Swing `ControlDock` is no longer opened at startup. It remains available as an explicit advanced/legacy surface through `ADV ↗` or `COSMOSIS_LEGACY_CONTROL_DOCK=1`.
+The default desktop now follows a user-facing image-editor flow:
 
-The single-window hierarchy is derived from the Math-by-Design reference rather than copied from one of its visual examples: the image stage owns attention, `RUN` is the one bright primary action, workflow choice is a stable left-rail state, inspector metadata stays secondary, and version lineage remains low in the frame. Existing Offworld material/color authority is preserved.
+1. choose **Generate**, **Edit**, or **Mask**;
+2. type the prompt directly in the left composer;
+3. add reference images when useful;
+4. choose/cycle the provider and model;
+5. press the large primary action;
+6. pick prior imports/edits/generations from visual **History** on the right.
 
-Normal CI launches the real workstation under Xvfb with the GLFW backend and Mesa llvmpipe. It requires `layout.mode=single-window`, `dock.showing=false`, the authoritative Offworld background/foreground/hard-corner tokens, and a non-empty screenshot.
+The canvas stays central. **Analyze**, **Remix**, **Upscale**, Fit/Compare/Export, mask visibility and keyboard shortcuts remain close at hand without exposing the full control-plane surface first.
 
-PR #17 implementation run `38005546497` passed the graphical smoke with `149824` sampled warm-dark pixels, `274` ivory pixels, and screenshot SHA-256 `c9d69af12a68cc3efb42b9bf45acc6af5a4f097b6f6f93d4bdef1874a1b6905c`. The design provenance, color-space correction, and remaining advanced-window boundary are recorded in `docs/verification/ui-single-window-math-by-design-2026-10-09.md`.
+The interaction structure was informed by the public `markfulton/NanoBananaEditor` project (composer → canvas → visual history and Generate/Edit/Mask as primary verbs). No NanoBananaEditor code, styling, assets, or AGPL source was copied; the workspace is independently implemented in Kotlin/OPENRNDR and retains COSMOSIS Offworld + Math-by-Design visual authority.
 
-The earlier PR #14 two-window checkpoint remains historical evidence in `docs/verification/ui-runtime-2026-09-29.md`; it is no longer the default launch contract.
+The prior technical workstation is still available for regression/debugging:
+
+```bash
+COSMOSIS_LEGACY_WORKSPACE=1 ./gradlew :run
+```
+
+The **Advanced** button opens the existing specialist ControlDock on demand for prompt-library CRUD, directives, detailed provider controls, ORML/settings and other engineering surfaces.
+
+Normal CI launches the real default workspace under Xvfb with the GLFW backend and Mesa llvmpipe. It requires `layout.mode=single-window`, `layout.family=friendly-editor`, `layout.primaryFlow=generate-edit-mask`, direct prompt composition, visual history, `dock.showing=false`, authoritative Offworld colors/hard corners, and a non-empty screenshot.
+
+PR #18 implementation run `38008238098` passed core/static checks, tests + `acceptanceSmoke`, provider capability/transport checks, ORML distribution checks, and the graphical runtime smoke. Its screenshot SHA-256 is `1aa315c794f99bea4e8c8b3c973f49ab75843c6bca40b79a0c12629153c561ca`. See `docs/verification/ui-friendly-editor-2026-10-09.md`.
+
+The earlier PR #17 Math-by-Design single-window shell and PR #14 dual-window checkpoint remain historical evidence; neither is the current default interaction contract.
 
 ### Offline provider contract smoke
 
