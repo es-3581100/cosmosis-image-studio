@@ -78,6 +78,10 @@ jobs:
           test "$code" -eq 0
           grep -F "UI_SMOKE_PASS" build/ui-smoke/report.txt
           grep -F "layout.mode=single-window" build/ui-smoke/report.txt
+          grep -F "layout.family=friendly-editor" build/ui-smoke/report.txt
+          grep -F "layout.primaryFlow=generate-edit-mask" build/ui-smoke/report.txt
+          grep -F "composer.directPrompt=true" build/ui-smoke/report.txt
+          grep -F "history.visual=true" build/ui-smoke/report.txt
           grep -F "dock.showing=false" build/ui-smoke/report.txt
           grep -F "theme.background=#10100E" build/ui-smoke/report.txt
           grep -F "theme.foreground=#FFFFE3" build/ui-smoke/report.txt
