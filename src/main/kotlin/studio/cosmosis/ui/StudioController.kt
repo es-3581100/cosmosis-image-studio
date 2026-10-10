@@ -45,11 +45,21 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     private val activeReferenceIds=linkedSetOf<String>()
     private var currentMaskId:String?=null
     private var openAiSessionKey:CharArray?=null
+    private var geminiSessionKey:CharArray?=null
+    private var customSessionKey:CharArray?=null
+    private var customKeyEnvName:String="CUSTOM_OPENAI_API_KEY"
+    private var customModelId:String?=null
 
-    val providers=ProviderRegistry.default().register(OpenAiProvider(apiKey={
-        openAiSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
-            ?: System.getenv("OPENAI_API_KEY")
-    }))
+    val providers=ProviderRegistry.default()
+        .register(OpenAiProvider(apiKey={
+            openAiSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
+                ?: System.getenv("OPENAI_API_KEY")
+        }))
+        .register(GeminiProvider(apiKey={
+            geminiSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
+                ?: System.getenv("GEMINI_API_KEY")
+                ?: System.getenv("GOOGLE_API_KEY")
+        }))
     val agentIndex=AgentIndex(docsRoot)
     val orml=OrmlExecutor.discovered()
 
@@ -196,10 +206,47 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     fun importPrompt(path:Path):PromptAsset{val p=PromptExchange.importPrompt(path);prompts.create(p);db!!.savePrompt(p);sync("PROMPT IMPORTED / ${p.id}");return p}
     fun promptRevisions(id:String)=prompts.revisions(id)
 
-    fun configureCustomProvider(baseUrl:String,keyEnv:String="CUSTOM_OPENAI_API_KEY"){
-        require(baseUrl.startsWith("http")){"Custom base URL must use http/https"}
-        providers.register(OpenAiCompatibleProvider("custom",{System.getenv(keyEnv)},baseUrl))
-        state.update{it.copy(message="CUSTOM PROVIDER REGISTERED / secret env $keyEnv")}
+    fun configureCustomProvider(
+        baseUrl:String,
+        modelId:String,
+        secret:CharArray?=null,
+        keyEnv:String="CUSTOM_OPENAI_API_KEY"
+    ){
+        val route=baseUrl.trim().trimEnd('/')
+        val model=modelId.trim()
+        val envName=keyEnv.trim().ifBlank{"CUSTOM_OPENAI_API_KEY"}
+        require(route.startsWith("http://")||route.startsWith("https://")){"Custom base URL must use http/https"}
+        require(model.isNotBlank()){"Custom model ID is required"}
+        secret?.let{chars->
+            val value=chars.concatToString().trim()
+            if(value.isNotBlank()){
+                customSessionKey?.fill('\u0000')
+                customSessionKey=value.toCharArray()
+            }
+        }
+        customKeyEnvName=envName
+        customModelId=model
+        providers.register(OpenAiCompatibleProvider(
+            providerId="custom",
+            apiKey={
+                customSessionKey?.takeIf{it.isNotEmpty()}?.concatToString()?.takeIf{it.isNotBlank()}
+                    ?: System.getenv(customKeyEnvName)
+            },
+            baseUrl=route,
+            modelId=model
+        ))
+        state.update{it.copy(message="CUSTOM ROUTE REGISTERED / "+model)}
+    }
+    fun customModelId():String?=customModelId
+    fun clearCustomSessionKey(){
+        customSessionKey?.fill('\u0000')
+        customSessionKey=null
+        state.update{it.copy(message="CUSTOM ROUTE / SESSION KEY CLEARED")}
+    }
+    fun customCredentialSource():String=when{
+        customSessionKey?.isNotEmpty()==true -> "session"
+        !System.getenv(customKeyEnvName).isNullOrBlank() -> "environment"
+        else -> "missing"
     }
     fun configureOpenAiSessionKey(secret:CharArray){
         val value=secret.concatToString().trim()
@@ -216,6 +263,23 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     fun openAiCredentialSource():String=when{
         openAiSessionKey?.isNotEmpty()==true -> "session"
         !System.getenv("OPENAI_API_KEY").isNullOrBlank() -> "environment"
+        else -> "missing"
+    }
+    fun configureGeminiSessionKey(secret:CharArray){
+        val value=secret.concatToString().trim()
+        require(value.isNotBlank()){"Google / Gemini API key is empty"}
+        geminiSessionKey?.fill('\u0000')
+        geminiSessionKey=value.toCharArray()
+        state.update{it.copy(message="GEMINI / SESSION KEY READY")}
+    }
+    fun clearGeminiSessionKey(){
+        geminiSessionKey?.fill('\u0000')
+        geminiSessionKey=null
+        state.update{it.copy(message=if(System.getenv("GEMINI_API_KEY").isNullOrBlank()&&System.getenv("GOOGLE_API_KEY").isNullOrBlank())"GEMINI / NO KEY CONFIGURED" else "GEMINI / USING ENVIRONMENT KEY")}
+    }
+    fun geminiCredentialSource():String=when{
+        geminiSessionKey?.isNotEmpty()==true -> "session"
+        !System.getenv("GEMINI_API_KEY").isNullOrBlank() || !System.getenv("GOOGLE_API_KEY").isNullOrBlank() -> "environment"
         else -> "missing"
     }
     fun testProvider(id:String):ConnectionStatus=providers.get(id).testConnection()
@@ -753,7 +817,12 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
     private fun assetForCurrent():ImageAsset?=currentVersionId()?.let(graph::get)?.let{assets[it.assetId]}
     private fun sync(message:String){val pp=paths;state.update{it.copy(projectName=project?.name?:"NO PROJECT",projectRoot=project?.root?:"",currentVersion=project?.currentVersionId?:"V---",versions=graph.all(),jobs=engine?.snapshot().orEmpty(),referencePaths=if(pp==null)emptyList() else activeReferenceAssets().map{x->pp.root.resolve(x.path).toString()},message=message)}}
     private fun closeProject(){engine?.close();db?.close();engine=null;db=null;project=null;paths=null;assets.clear();generations.clear();directives.clear();activeReferenceIds.clear();currentMaskId=null;prompts=PromptLibrary();graph=VersionGraph()}
-    override fun close(){openAiSessionKey?.fill('\u0000');openAiSessionKey=null;closeProject()}
+    override fun close(){
+        openAiSessionKey?.fill('\u0000');openAiSessionKey=null
+        geminiSessionKey?.fill('\u0000');geminiSessionKey=null
+        customSessionKey?.fill('\u0000');customSessionKey=null
+        closeProject()
+    }
     private fun readProjectJson(p:Path):Map<String,String>{if(!Files.exists(p))return emptyMap();val t=Files.readString(p);return Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"").findAll(t).associate{it.groupValues[1] to it.groupValues[2]}}
     private fun sha256(bytes:ByteArray)=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
 }
