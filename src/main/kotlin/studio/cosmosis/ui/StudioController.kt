@@ -664,7 +664,8 @@ class StudioController(val state:StudioState,private val docsRoot:Path=Path.of("
             JobState.CANCELLED -> "CANCELLED / "+requestId
             JobState.INTERRUPTED -> "INTERRUPTED / "+requestId
         }
-        state.update{it.copy(jobs=snapshot,jobState=job.state.name,message=message)}
+        val uiState=if(job.state==JobState.COMPLETE)"RUNNING" else job.state.name
+        state.update{it.copy(jobs=snapshot,jobState=uiState,message=message)}
     }
 
     fun cancelActiveJobs():Int{
