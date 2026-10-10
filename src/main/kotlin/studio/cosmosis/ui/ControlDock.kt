@@ -586,7 +586,7 @@ class ControlDock(private val controller:StudioController,private val state:Stud
     private fun cropDialog(){val s=state.get();if(s.imagePath==null)return showError(IllegalStateException("Import/select an image first"));val x=JTextField("0");val y=JTextField("0");val w=JTextField(s.imageWidth.toString());val h=JTextField(s.imageHeight.toString());val form=JPanel(GridLayout(0,2,8,8)).apply{add(label("X"));add(x);add(label("Y"));add(y);add(label("WIDTH"));add(w);add(label("HEIGHT"));add(h)};if(JOptionPane.showConfirmDialog(this,form,"CROP / PIXELS",JOptionPane.OK_CANCEL_OPTION)!=JOptionPane.OK_OPTION)return;runCatching{controller.cropCurrent(x.text.toInt(),y.text.toInt(),w.text.toInt(),h.text.toInt())}.onFailure(::showError)}
     private fun installKeys(){
         val dispatcher=KeyEventDispatcher{e->
-        if(e.id!=KeyEvent.KEY_PRESSED)return@addKeyEventDispatcher false
+        if(e.id!=KeyEvent.KEY_PRESSED)return@KeyEventDispatcher false
         val ctrl=e.isControlDown||e.isMetaDown
         val focus=KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
         val typing=focus is JTextComponent || focus is JComboBox<*>
