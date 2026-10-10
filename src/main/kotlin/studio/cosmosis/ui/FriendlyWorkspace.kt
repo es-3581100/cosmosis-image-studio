@@ -614,14 +614,17 @@ fun launchFriendlyWorkspace(
                         runCatching { controller.smartSaliencyMask() }.onFailure(::fail)
                     }
                 }
-                val actionText = when (snapshot.workflowMode) {
+                val busy=snapshot.jobState in setOf("QUEUED","RUNNING","WAITING")
+                val actionText = if(busy) "Cancel job" else when (snapshot.workflowMode) {
                     WorkflowMode.EDIT_EXISTING -> "Apply edit"
                     WorkflowMode.MASK_EDIT -> "Apply masked edit"
                     WorkflowMode.REFERENCE_REMIX -> "Create remix"
                     else -> "Generate image"
                 }
-                button(UiRect(pad, actionY, innerW, actionH), actionText, primary = true) { runCurrent() }
-                label("Ctrl + Enter", composerWidth - 87.0, actionY - 8.0, F_SECOND, tiny = true)
+                button(UiRect(pad, actionY, innerW, actionH), actionText, primary = true) {
+                    if(busy) controller.cancelActiveJobs() else runCurrent()
+                }
+                label(if(busy)"Provider request in progress" else "Ctrl + Enter", composerWidth - if(busy)151.0 else 87.0, actionY - 8.0, F_SECOND, tiny = true)
             }
 
             drawer.fill = F_BG
@@ -829,9 +832,23 @@ fun launchFriendlyWorkspace(
             drawer.fill = F_SURFACE_2
             drawer.stroke = F_FG.opacify(.10)
             drawer.rectangle(0.0, (height - statusHeight).toDouble(), width.toDouble(), statusHeight)
+            val busyStatus=snapshot.jobState in setOf("QUEUED","RUNNING","WAITING")
+            if(busyStatus){
+                drawer.stroke=null
+                drawer.fill=F_FG.opacify(.82)
+                if(snapshot.reducedMotion){
+                    drawer.rectangle(0.0,(height-statusHeight).toDouble(),width*0.28,3.0)
+                }else{
+                    val span=(width*0.18).coerceIn(120.0,260.0)
+                    val travel=width+span
+                    val x=((frameCount*7.0)%travel)-span
+                    drawer.rectangle(x,(height-statusHeight).toDouble(),span,3.0)
+                }
+            }
             val statusColor = when (snapshot.jobState) {
                 "FAILED" -> F_RED
                 "COMPLETE" -> F_GREEN
+                "QUEUED","RUNNING","WAITING" -> F_FG
                 else -> F_MUTED
             }
             label(snapshot.message.take(88), 14.0, height - 9.0, statusColor, tiny = true)

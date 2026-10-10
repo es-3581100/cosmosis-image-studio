@@ -59,8 +59,8 @@ class OpenRouterImageProvider(
         val fields=mutableListOf<Pair<String,String?>>(
             "model" to JsonUtil.quote(request.model),
             "prompt" to JsonUtil.quote(request.prompt),
-            "n" to request.variants.toString(),
-            "quality" to request.quality?.let(JsonUtil::quote),
+            "n" to request.variants.takeIf{it>1}?.toString(),
+            "quality" to request.quality?.takeIf{it.isNotBlank()&&!it.equals("auto",true)}?.let(JsonUtil::quote),
             "output_format" to JsonUtil.quote(request.outputFormat),
             "aspect_ratio" to request.aspectRatio?.let(JsonUtil::quote),
             "resolution" to request.metadata["imageSize"]?.let(JsonUtil::quote)
@@ -68,7 +68,7 @@ class OpenRouterImageProvider(
         val body=fields.filter{it.second!=null}.joinToString(prefix="{",postfix="}") {
             JsonUtil.quote(it.first)+":"+it.second
         }
-        val(code,json)=http.json("POST",baseUrl.trimEnd('/')+"/images",headers(),body)
+        val(code,json)=http.json("POST",baseUrl.trimEnd('/')+"/images",headers(),body,timeoutSeconds=120)
         if(code !in 200..299) error("OpenRouter image HTTP $code: "+json.take(800))
         val payloads=JsonUtil.allStringFields(json,"b64_json")
         if(payloads.isEmpty()) error("OpenRouter image response contained no data[].b64_json payload")
@@ -99,7 +99,7 @@ class OpenRouterImageProvider(
     override fun testConnection():ConnectionStatus {
         val start=System.nanoTime()
         return try {
-            val(code,json)=http.json("GET",baseUrl.trimEnd('/')+"/images/models",headers())
+            val(code,json)=http.json("GET",baseUrl.trimEnd('/')+"/images/models",headers(),timeoutSeconds=20)
             if(code !in 200..299) {
                 ConnectionStatus(false,"OpenRouter image catalog HTTP $code "+json.take(160),(System.nanoTime()-start)/1_000_000)
             } else {
